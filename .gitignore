@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# 环境变量（含密钥）
+.env
+
+# 入站原始数据：含姓名 / 证件号 / 手机号等个人信息，严禁入库
+data/inbound/
+
+# 事实库文件
+data/store/
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+
+# 生成产物
+out/
+*.log

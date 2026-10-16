@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>云学通 BI 差分 Agent</title>
+<style>
+  :root{
+    --bg:#f6f7fb; --card:#ffffff; --line:#e6e8f0; --line-2:#eef0f6;
+    --ink:#111827; --ink-2:#5b6478; --ink-3:#8b93a7;
+    --indigo:#4f46e5; --indigo-soft:#eef0ff; --orange:#f97316;
+    --up:#dc2626; --down:#16a34a;      /* 中国股市习惯：涨红跌绿 */
+    --warn:#b45309; --warn-bg:#fff7ed; --err:#b91c1c; --err-bg:#fef2f2;
+    --ok:#047857; --ok-bg:#ecfdf5;
+    --radius:12px; --shadow:0 1px 2px rgba(16,24,40,.04),0 4px 12px rgba(16,24,40,.05);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+    font-size:14px;line-height:1.65;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 20px 64px}
+
+  header.top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:22px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:11px}
+  .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--indigo),#7c6cf3);
+    display:grid;place-items:center;color:#fff;font-weight:700;font-size:15px;letter-spacing:.5px}
+  h1{font-size:18px;margin:0;font-weight:650;letter-spacing:-.01em}
+  .sub{color:var(--ink-3);font-size:12.5px;margin-top:1px}
+  .badges{display:flex;gap:6px;flex-wrap:wrap}
+  .badge{font-size:11.5px;padding:4px 9px;border-radius:999px;border:1px solid var(--line);
+    background:#fff;color:var(--ink-2);white-space:nowrap}
+  .badge.on{background:var(--indigo-soft);border-color:#dcd9ff;color:#4338ca;font-weight:600}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .pad{padding:16px 18px}
+
+  .askrow{display:flex;gap:10px;margin-top:12px}
+  textarea{flex:1;resize:vertical;min-height:52px;padding:11px 13px;font:inherit;color:var(--ink);
+    border:1px solid var(--line);border-radius:10px;background:#fcfcfe;outline:none;transition:border .15s,box-shadow .15s}
+  textarea:focus{border-color:#c7c3ff;box-shadow:0 0 0 3px rgba(79,70,229,.10);background:#fff}
+  button{cursor:pointer;font:inherit;font-weight:600;border:none;border-radius:10px;padding:0 20px;
+    background:var(--indigo);color:#fff;transition:filter .15s,opacity .15s}
+  button:hover:not(:disabled){filter:brightness(1.07)}
+  button:disabled{opacity:.55;cursor:not-allowed}
+  .chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:11px}
+  .chip{font-size:12.5px;padding:5px 11px;border-radius:999px;border:1px solid var(--line);
+    background:#fff;color:var(--ink-2);cursor:pointer}
+  .chip:hover{border-color:#c7c3ff;color:var(--indigo);background:var(--indigo-soft)}
+
+  h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);
+    margin:26px 0 11px;font-weight:650;display:flex;align-items:center;gap:8px}
+  h2::after{content:"";flex:1;height:1px;background:var(--line-2)}
+
+  .kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(178px,1fr));gap:11px}
+  .kpi{background:#fff;border:1px solid var(--line);border-radius:11px;padding:13px 14px}
+  .kpi .name{font-size:12.5px;color:var(--ink-2)}
+  .kpi .val{font-size:22px;font-weight:680;letter-spacing:-.02em;margin-top:5px;font-variant-numeric:tabular-nums}
+  .kpi .val small{font-size:12px;font-weight:500;color:var(--ink-3);margin-left:2px}
+  .kpi .delta{font-size:12.5px;margin-top:5px;font-variant-numeric:tabular-nums}
+  .d-up{color:var(--up)} .d-down{color:var(--down)} .d-flat{color:var(--ink-3)}
+  .kpi .attr{margin-top:8px;padding-top:8px;border-top:1px dashed var(--line-2);font-size:12px;color:var(--ink-2)}
+  .attr .row{display:flex;justify-content:space-between;gap:8px}
+  .pill{font-size:10.5px;padding:1.5px 7px;border-radius:999px;font-weight:600}
+  .pill.ok{background:var(--ok-bg);color:var(--ok)} .pill.warn{background:var(--warn-bg);color:var(--warn)}
+
+  .answer{white-space:pre-wrap;word-break:break-word;font-size:13.5px;line-height:1.85}
+  .answer .sec{font-weight:650;color:var(--indigo)}
+
+  .steps{display:flex;flex-direction:column;gap:9px}
+  .step{background:#fff;border:1px solid var(--line);border-radius:11px;overflow:hidden}
+  .step .hd{display:flex;gap:10px;align-items:flex-start;padding:11px 14px;cursor:pointer}
+  .step .hd:hover{background:#fafbfe}
+  .num{flex:0 0 22px;height:22px;border-radius:6px;background:var(--indigo-soft);color:#4338ca;
+    display:grid;place-items:center;font-size:11.5px;font-weight:700;margin-top:1px}
+  .step .body{flex:1;min-width:0}
+  .tool{font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:12.5px;font-weight:650;color:var(--ink)}
+  .step .params{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:var(--ink-3);
+    word-break:break-all;margin-top:2px}
+  .why{font-size:12.5px;color:var(--ink-3);margin-top:4px}
+  .got{font-size:13px;color:var(--ink);margin-top:5px;padding-left:10px;border-left:2px solid var(--indigo-soft)}
+  .step pre{display:none;margin:0;padding:12px 14px;background:#fbfbfe;border-top:1px solid var(--line-2);
+    font-size:11.5px;line-height:1.6;max-height:300px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+  .step.open pre{display:block}
+  .ms{margin-left:auto;font-size:11px;color:var(--ink-3);white-space:nowrap;padding-left:8px}
+
+  .goal{background:linear-gradient(180deg,var(--indigo-soft),#f8f9ff);border:1px solid #dcd9ff;
+    border-left:3px solid var(--indigo);border-radius:10px;padding:10px 14px;margin-bottom:11px;
+    font-size:13px}
+  .goal .name{font-weight:650;color:#3730a3}
+  .goal .meta{color:var(--ink-3);font-size:11.5px;margin-top:3px;display:flex;gap:9px;flex-wrap:wrap}
+  .goal .meta .pill{background:#fff;border:1px solid #dcd9ff;color:#4338ca}
+  .goal .note{color:var(--ink-2);margin-top:5px;font-size:12.5px;line-height:1.6}
+
+  .evi{display:grid;gap:10px}
+  .evi .item{background:#fff;border:1px solid var(--line);border-left:3px solid var(--orange);
+    border-radius:10px;padding:12px 14px;font-size:13px}
+  .evi .who{font-weight:650}
+  .evi .trace{font-size:12.5px;color:var(--ink-2);margin-top:7px;line-height:1.75}
+  .evi code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;background:#f4f5fa;
+    padding:1px 5px;border-radius:4px;color:#4338ca;word-break:break-all}
+
+  .empty{color:var(--ink-3);font-size:13px;padding:26px 0;text-align:center}
+  .spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.45);
+    border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px;margin-right:7px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .banner{border-radius:10px;padding:11px 14px;font-size:13px;margin-top:14px;display:none}
+  .banner.show{display:block}
+  .banner.err{background:var(--err-bg);color:var(--err);border:1px solid #fecaca}
+  footer{margin-top:34px;color:var(--ink-3);font-size:12px;text-align:center}
+  footer a{color:var(--indigo);text-decoration:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <div class="logo">BI</div>
+      <div>
+        <h1>云学通 BI 差分 Agent</h1>
+        <div class="sub">Excel 差分 · 事实存储 · 固定查询 API · MCP · 自然语言闭环</div>
+      </div>
+    </div>
+    <div class="badges">
+      <span class="badge on">只读</span>
+      <span class="badge" id="b-batches">批次 —</span>
+      <span class="badge" id="b-anom">异常 —</span>
+    </div>
+  </header>
+
+  <div class="card pad">
+    <div style="font-weight:650;font-size:14px">问一个问题</div>
+    <div class="sub" style="margin-top:3px">系统会自动多轮查询、发现异常、追溯证据，再给出解释。</div>
+    <div class="askrow">
+      <textarea id="q" placeholder="例如：为什么报名人数涨了？本期有哪些异常？证据在哪？"></textarea>
+      <button id="go">提问</button>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div class="banner err" id="err"></div>
+  </div>
+
+  <div id="result" style="display:none">
+    <h2>核心指标</h2>
+    <div class="kpis" id="kpis"></div>
+
+    <h2>结论与解释</h2>
+    <div class="card pad"><div class="answer" id="answer"></div></div>
+
+    <div id="evi-wrap" style="display:none">
+      <h2>证据追溯</h2>
+      <div class="evi" id="evi"></div>
+    </div>
+
+    <h2>执行轨迹 <span id="stepcount" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h2>
+    <div class="steps" id="steps"></div>
+  </div>
+
+  <div id="placeholder" class="empty">输入问题后，这里会显示可核查的推导过程。</div>
+
+  <footer>
+    <a href="/docs" target="_blank">API 文档</a> · <a href="/health" target="_blank">健康检查</a>
+    · 所有结论均可追溯到原始 Excel 的具体行
+  </footer>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const num = (v, d = 0) => v === null || v === undefined ? "—"
+  : Number(v).toLocaleString("zh-CN", { minimumFractionDigits: d, maximumFractionDigits: d });
+
+const EXAMPLES = [
+  "为什么报名人数涨了？",
+  "本期有哪些异常？把证据找出来",
+  "对比两期，变化最大的是什么",
+  "已通过人数为什么增加",
+  "数据质量有没有问题",
+];
+$("chips").innerHTML = EXAMPLES.map((q) => `<span class="chip">${esc(q)}</span>`).join("");
+$("chips").addEventListener("click", (e) => {
+  if (e.target.classList.contains("chip")) { $("q").value = e.target.textContent; ask(); }
+});
+
+async function boot() {
+  try {
+    const h = await (await fetch("/health")).json();
+    $("b-batches").textContent = "批次 " + (h.batches || []).length + " 期";
+  } catch (_) { $("b-batches").textContent = "服务未就绪"; }
+}
+boot();
+
+async function ask() {
+  const question = $("q").value.trim();
+  if (!question) { $("q").focus(); return; }
+  const btn = $("go");
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>查询中';
+  $("err").classList.remove("show");
+
+  try {
+    const res = await fetch("/agent/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status + " " + (await res.text()).slice(0, 200));
+    render(await res.json());
+  } catch (e) {
+    $("err").textContent = "查询失败：" + e.message;
+    $("err").classList.add("show");
+  } finally {
+    btn.disabled = false; btn.textContent = "提问";
+  }
+}
+
+function render(d) {
+  $("placeholder").style.display = "none";
+  $("result").style.display = "block";
+
+  const anom = d.anomalies || {};
+  $("b-anom").textContent = "异常 " + (anom.total ?? "—") + " 条";
+
+  // ---- 指标卡 ----
+  $("kpis").innerHTML = (d.metrics || []).map((m) => {
+    const dv = m.delta;
+    const cls = dv > 0 ? "d-up" : dv < 0 ? "d-down" : "d-flat";
+    const arrow = dv > 0 ? "↑" : dv < 0 ? "↓" : "＝";
+    const dec = m.decimals || 0;
+    const attr = m.attribution || {};
+    const drivers = (attr.drivers || []).filter((x) => x.effect);
+    const attrHtml = drivers.length ? `
+      <div class="attr">
+        ${drivers.map((x) => `<div class="row"><span>${esc(x.label)}</span>
+          <b class="${x.effect > 0 ? "d-up" : "d-down"}">${x.effect > 0 ? "+" : ""}${num(x.effect)}</b></div>`).join("")}
+        ${attr.residual !== null && attr.residual !== undefined
+          ? `<div class="row" style="margin-top:4px">
+               <span class="pill ${attr.residual === 0 ? "ok" : "warn"}">${attr.residual === 0 ? "已完全解释" : "残差 " + num(attr.residual, 2)}</span></div>`
+          : ""}
+      </div>` : "";
+    return `<div class="kpi">
+      <div class="name">${esc(m.metric_name)}</div>
+      <div class="val">${num(m.value_to, dec)}<small>${esc(m.unit || "")}</small></div>
+      <div class="delta ${cls}">${arrow} ${num(Math.abs(dv ?? 0), dec)}${esc(m.unit || "")}
+        ${m.delta_pct !== null && m.delta_pct !== undefined ? `（${m.delta_pct > 0 ? "+" : ""}${num(m.delta_pct, 1)}%）` : ""}</div>
+      ${attrHtml}
+    </div>`;
+  }).join("") || '<div class="empty">无指标数据</div>';
+
+  // ---- 解释 ----
+  const goal = d.goal;
+  let goalHtml = "";
+  if (goal) {
+    const meta = [];
+    if (goal.priority) meta.push(`<span class="pill">优先级: ${esc(goal.priority)}</span>`);
+    if (goal.focus) meta.push(`<span class="pill">策略: ${esc(goal.focus)}</span>`);
+    if (goal.action) meta.push(`<span class="pill">action: ${esc(goal.action)}</span>`);
+    let note = "";
+    const m = (d.answer || "").match(/说明：([^【]*)/);
+    if (m) note = m[1].trim().split("\n")[0];
+    goalHtml = `<div class="goal"><div class="name">🎯 命中目标：${esc(goal.name)}</div>
+      ${goal.describe ? `<div class="note" style="margin-top:3px">${esc(goal.describe)}</div>` : ""}
+      ${note ? `<div class="note">${esc(note)}</div>` : ""}
+      <div class="meta">${meta.join("")}</div></div>`;
+  }
+  $("answer").innerHTML = goalHtml + esc(d.answer || "")
+    .replace(/【([^】]+)】/g, '<span class="sec">【$1】</span>');
+
+  // ---- 证据 ----
+  const evi = d.evidence || [];
+  $("evi-wrap").style.display = evi.length ? "block" : "none";
+  $("evi").innerHTML = evi.map((e) => {
+    const ev = e.event || {}, tr = e.trace || {}, chain = tr.chain || [];
+    return `<div class="item">
+      <div class="who">${esc(ev.name || ev.record_key || "?")}
+        <span style="font-weight:400;color:var(--ink-3)">｜${esc(e.anomaly?.rule_id || "")}</span></div>
+      <div class="trace">
+        变更：<code>${esc(ev.field_name || "")}</code>
+        ${esc(ev.value_from_raw || "(空)")} → ${esc(ev.value_to_raw || "(空)")}<br>
+        ${chain.filter((c) => c.present).map((c) =>
+          `来源（${esc(c.batch)}）：<code>${esc(c.path || c.file)}</code> 第 <b>${c.source_row}</b> 行
+           ｜证件号 <code>${esc(c.id_number_masked || "")}</code>`).join("<br>")}
+        ${chain[0]?.file_sha256 ? `<br>文件指纹 sha256：<code>${esc(chain[0].file_sha256.slice(0, 24))}…</code>` : ""}
+      </div></div>`;
+  }).join("");
+
+  // ---- 轨迹 ----
+  $("stepcount").textContent = `共 ${d.step_count} 步 · ${d.elapsed_ms} ms · 批次 ${d.from} → ${d.to}`;
+  $("steps").innerHTML = (d.steps || []).map((s) => `
+    <div class="step">
+      <div class="hd">
+        <div class="num">${s.n}</div>
+        <div class="body">
+          <div class="tool">${esc(s.tool)}</div>
+          <div class="params">${esc(JSON.stringify(s.params))}</div>
+          <div class="why">↳ ${esc(s.reason)}</div>
+          <div class="got">${esc(s.summary)}</div>
+        </div>
+        <div class="ms">${s.elapsed_ms}ms</div>
+      </div>
+      <pre>${esc(JSON.stringify(s.result, null, 2))}</pre>
+    </div>`).join("");
+  document.querySelectorAll(".step .hd").forEach((hd) =>
+    hd.addEventListener("click", () => hd.parentElement.classList.toggle("open")));
+
+  $("result").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+$("go").addEventListener("click", ask);
+$("q").addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") ask();
+});
+</script>
+</body>
+</html>

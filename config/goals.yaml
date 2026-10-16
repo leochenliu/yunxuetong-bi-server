@@ -1,0 +1,75 @@
+# ============================================================================
+# 业务关注点 / 工作改进目标（BIAgent 路由器）
+# ----------------------------------------------------------------------------
+# 这是「业务用户」与 BIAgent 之间的契约。Agent 每次收到自然语言问题时，
+# 会按这张表匹配：① 命中的目标名会写进解释头部；② focus 决定查询策略；
+# ③ output 决定解释深度；④ action 决定是否走业务专属钩子。
+#
+# 启用方式：BIAgent 启动时自动加载 config/goals.yaml；空文件/不存在 = 全部
+# 走默认概览路径（行为与升级前一致）。
+#
+# 字段说明：
+#   name        目标名（解释里会写【目标: xxx】）
+#   describe    一句话告诉 Agent 这是什么
+#   match       命中条件（可只填部分）
+#     - intent    字符串或列表：匹配 Agent 的 detect_intent 输出
+#     - keywords  列表：任一出现在 question 里即命中
+#     - rule_id   精确匹配异常规则 id
+#     - field_name 精确匹配某个追踪字段
+#   priority    high / medium / low（命中多条时按此排序）
+#   focus       决定查询策略（high_severity_only / top_n_events / overview）
+#   output      决定解释深度
+#     - show_evidence     是否必须给文件+行号
+#     - show_attribution  是否必须给归因残差
+#     - max_steps         推理步数上限
+#   action      业务专属动作（见 src/bi/goal_actions.py）
+#     - missing_data      数据不足时显式回绝
+#     - screen_due_cert   证书应复查粗筛
+#   note        给人类看的备注（解释里会引用）
+# ============================================================================
+
+goals:
+
+  # ---------------------------------------------------------------- 1
+  - name: 潜在流失率（应报未报）
+    describe: 哪些学生「应报名某门课但实际未报」—— 用于统计潜在流失率
+    match:
+      keywords: [流失, 应报, 应报名, 应报未报, 漏报, 漏报率, 缺口]
+    priority: high
+    focus: top_n_events
+    output:
+      show_evidence: true
+      show_attribution: false
+    action: missing_data
+    note: |
+      当前 Excel 没有「应报课程清单」与「学员必修课」字段。Agent 不假装能给数字，
+      会明确列出缺什么、并提供可作为弱代理的同单位历史分布（≥3 人的 58 个单位）。
+      待业务经理补一份「X 单位应报 Y 课」清单后可立即给出可核查数字。
+
+  # ---------------------------------------------------------------- 2
+  - name: 证书快到期（应复查）
+    describe: 哪些学员的证书可能已快到期——需主动联系、增加销售机会
+    match:
+      keywords: [证书, 到期, 续期, 换证, 复查, 应复查, 跟进, 主动联系]
+    priority: high
+    focus: high_severity_only
+    output:
+      show_evidence: true
+      show_attribution: false
+    action: screen_due_cert
+    note: |
+      行业经验：低压/登高/焊工证书一般 3 年。原表没有「取证日期」字段，
+      本目标用「上次开班日期 + 3 年」做粗筛代理，**结果只能作「建议复审」提醒**，
+      实际到期以证书档案为准。当前 D1 数据里命中 0 人（开班日期都在近一年内），
+      属预期——逻辑就位，等历史批次进来即生效。
+
+  # ---------------------------------------------------------------- 兜底
+  - name: 通用概览
+    describe: 不在以上关注范围内的查询走通用路径
+    match: {}
+    priority: low
+    focus: top_n_events
+    output:
+      show_evidence: true
+      show_attribution: true
+      max_steps: 12

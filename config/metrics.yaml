@@ -1,0 +1,45 @@
+# ============================================================================
+# 核心指标口径（3–5 个）。
+# 每个指标都能被「差分事件」解释：指标为什么变 = 哪些 added/removed/changed
+# 事件贡献了多少。这是第三阶段「指标对比」与第五阶段「异常归因」的共同地基。
+# ============================================================================
+
+metrics:
+  - key: enrolled_total
+    name: 报名总人数
+    unit: 人
+    decimals: 0
+    desc: 参与统计的学员总数（只含有证件号码者）
+    agg: count_rows
+
+  - key: exam_scheduled
+    name: 已安排考试人数
+    unit: 人
+    decimals: 0
+    desc: 考试日期非空的人数
+    agg: sum
+    column: 已考试人数
+
+  - key: exam_passed
+    name: 已通过人数
+    unit: 人
+    decimals: 0
+    desc: 考试状态 = 已通过 的人数
+    agg: sum
+    column: 已通过人数
+
+  - key: avg_score
+    name: 平均分
+    unit: 分
+    decimals: 1
+    desc: 所有有分数记录的平均值
+    agg: avg
+    column: 分数
+
+  - key: paid_count
+    name: 已付款人数
+    unit: 人
+    decimals: 0
+    desc: 是否付款 = 已付款 的人数
+    agg: sum
+    column: 已付款人数
