@@ -143,6 +143,43 @@
   .ts-demo b{font-weight:600}
   .ts-empty{padding:24px;text-align:center;color:var(--ink-3);font-size:12.5px}
 
+  /* ========== 任意两期对比 ========== */
+  .cmp-picker{display:flex;align-items:end;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+  .cmp-side{flex:1;min-width:160px}
+  .cmp-label{font-size:12px;color:var(--ink-2);margin-bottom:5px}
+  .cmp-select{width:100%;padding:9px 12px;font:inherit;border:1px solid var(--line);
+    border-radius:8px;background:#fff;color:var(--ink);outline:none;cursor:pointer}
+  .cmp-select:focus{border-color:#c7c3ff;box-shadow:0 0 0 3px rgba(79,70,229,.10)}
+  .cmp-arrow{font-size:18px;color:var(--ink-3);align-self:center;padding:0 6px}
+  .cmp-go{padding:9px 22px;background:var(--indigo);color:#fff;border:none;
+    border-radius:8px;font:inherit;font-weight:600;cursor:pointer;align-self:center}
+  .cmp-go:hover{filter:brightness(1.07)}
+  .cmp-go:disabled{opacity:.55;cursor:not-allowed}
+  .cmp-result{margin-top:8px}
+  .cmp-result .summary-bar{display:flex;gap:14px;padding:10px 14px;background:#f9fafb;
+    border:1px solid var(--line);border-radius:8px;margin-bottom:12px;font-size:12.5px}
+  .cmp-result .summary-bar .item{display:flex;align-items:center;gap:6px}
+  .cmp-result .summary-bar .dot{width:8px;height:8px;border-radius:2px}
+  .cmp-result .summary-bar .v{font-weight:600;font-variant-numeric:tabular-nums}
+  .cmp-result .delta-row{display:grid;grid-template-columns:90px 1fr 110px;align-items:center;
+    gap:10px;padding:9px 10px;border-radius:8px;background:#fff;border:1px solid var(--line);
+    margin-bottom:6px;font-size:12.5px}
+  .cmp-result .delta-row .name{font-weight:600;color:var(--ink-2)}
+  .cmp-result .delta-row .barbg{height:18px;background:var(--gray-soft);
+    border-radius:4px;overflow:hidden;position:relative;border:1px solid var(--line)}
+  .cmp-result .delta-row .barfill{position:absolute;top:0;height:100%;border-radius:3px}
+  .cmp-result .delta-row .barfill.up{background:var(--up);left:50%}
+  .cmp-result .delta-row .barfill.down{background:var(--down);right:50%}
+  .cmp-result .delta-row .barcenter{position:absolute;left:50%;top:0;
+    height:100%;width:1px;background:var(--ink-3);transform:translateX(-0.5px)}
+  .cmp-result .delta-row .delta{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+  .cmp-result .delta-row .delta.up{color:var(--up)}
+  .cmp-result .delta-row .delta.down{color:var(--down)}
+  .cmp-result .delta-row .delta.flat{color:var(--ink-3)}
+  .cmp-result .empty{padding:24px;text-align:center;color:var(--ink-3);font-size:12.5px}
+  .cmp-result .err{padding:14px;background:#fef2f2;border:1px solid #fecaca;
+    border-radius:8px;color:var(--red);font-size:12.5px}
+
   /* SVG 文本 */
   text{font-family:inherit}
 </style>
@@ -223,6 +260,32 @@
         实线是真实 D1 / D2。趋势线**可参考但不可用于业务决策**。等真实历史批次进来即可替换。
       </div>
       <div class="ts-strip" id="ts-strip"></div>
+    </div>
+  </section>
+
+  <!-- ========== 任意两期对比 ========== -->
+  <section>
+    <div class="sec-hd">
+      <span class="sec-num">·</span>
+      <span class="sec-title">任意两期对比</span>
+      <span class="sec-tag" id="cmp-tag">选两期看差值</span>
+    </div>
+    <div class="sec-body">
+      <div class="cmp-picker">
+        <div class="cmp-side">
+          <div class="cmp-label">基期（A）</div>
+          <select id="cmp-a" class="cmp-select"></select>
+        </div>
+        <div class="cmp-arrow">→</div>
+        <div class="cmp-side">
+          <div class="cmp-label">对比期（B）</div>
+          <select id="cmp-b" class="cmp-select"></select>
+        </div>
+        <button id="cmp-go" class="cmp-go">对比</button>
+      </div>
+      <div id="cmp-result" class="cmp-result">
+        <div class="empty">选两期点「对比」</div>
+      </div>
     </div>
   </section>
 
@@ -312,10 +375,91 @@ async function load() {
   renderHero(data);
   renderKPI(data);
   renderTimeseries(data);
+  renderComparePicker(data);
   renderRenewal(data.renewal);
   renderRisk(data.progress);
   renderTeachers(data.teachers);
   renderFunnel(data.funnel);
+}
+
+// ========== 任意两期对比：填充下拉框 + 渲染结果 ==========
+function renderComparePicker(data) {
+  // 从时间序列 keys 推断可选批次（用第一个指标的 points.batch）
+  const firstKey = Object.keys(data.timeseries || {})[0];
+  if (!firstKey) return;
+  const batches = data.timeseries[firstKey].map(p => p.batch);
+  if (batches.length < 2) {
+    $("cmp-result").innerHTML = `<div class="empty">至少需要 2 期数据才能对比</div>`;
+    $("cmp-go").disabled = true;
+    return;
+  }
+  const selA = $("cmp-a"), selB = $("cmp-b");
+  selA.innerHTML = selB.innerHTML = batches.map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join("");
+  // 默认：A = 倒数第二期，B = 最新期（领导最常用的对比）
+  if (batches.length >= 2) {
+    selA.value = batches[batches.length - 2];
+    selB.value = batches[batches.length - 1];
+  }
+  $("cmp-go").addEventListener("click", runCompare);
+  // 默认就跑一次
+  runCompare();
+}
+
+async function runCompare() {
+  const a = $("cmp-a").value, b = $("cmp-b").value;
+  if (!a || !b || a === b) {
+    $("cmp-result").innerHTML = `<div class="empty">请选两期不同的批次</div>`;
+    return;
+  }
+  $("cmp-result").innerHTML = `<div class="empty">加载中…</div>`;
+  try {
+    const r = await (await fetch(`/metrics/timeseries/diff?a=${a}&b=${b}`)).json();
+    if (r.detail) {
+      $("cmp-result").innerHTML = `<div class="err">${esc(r.detail)}</div>`;
+      return;
+    }
+    renderCompareResult(r);
+  } catch (e) {
+    $("cmp-result").innerHTML = `<div class="err">请求失败：${esc(e.message)}</div>`;
+  }
+}
+
+function renderCompareResult(d) {
+  const sum = d.summary;
+  $("cmp-tag").textContent = `${d.a} → ${d.b}`;
+  // 找最大绝对 delta 用于比例尺
+  const maxAbs = Math.max(1, ...d.items.filter(i => i.delta !== null).map(i => Math.abs(i.delta)));
+  const html = `
+    <div class="summary-bar">
+      <div class="item"><span class="dot" style="background:var(--up)"></span><span>上涨</span><span class="v">${sum.up}</span></div>
+      <div class="item"><span class="dot" style="background:var(--down)"></span><span>下降</span><span class="v">${sum.down}</span></div>
+      <div class="item"><span class="dot" style="background:var(--ink-3)"></span><span>持平</span><span class="v">${sum.flat}</span></div>
+      <div class="item" style="margin-left:auto;color:var(--ink-3)">可比 ${sum.comparable} / 5</div>
+    </div>
+    ${d.items.map(i => {
+      const name = i.metric_name || i.metric_key;
+      const u = i.unit || "";
+      if (!i.comparable) {
+        return `<div class="delta-row"><div class="name">${esc(name)}</div>
+          <div class="barbg"></div><div class="delta flat">N/A</div></div>`;
+      }
+      const dlt = i.delta;
+      const half = (Math.abs(dlt) / maxAbs) * 50;  // 0~50%
+      const dir = dlt > 0 ? "up" : (dlt < 0 ? "down" : "flat");
+      const sign = dlt > 0 ? "+" : "";
+      const pct_ = i.delta_pct === null ? "—" : (sign + i.delta_pct + "%");
+      const valStr = `${num(i.a, 1)}${u} → ${num(i.b, 1)}${u}`;
+      return `<div class="delta-row">
+        <div class="name">${esc(name)}</div>
+        <div class="barbg">
+          <div class="barfill ${dir}" style="width:${half}%; ${dir === 'up' ? 'left:50%' : 'right:50%'}"></div>
+          <div class="barcenter"></div>
+        </div>
+        <div class="delta ${dir}">${sign}${num(dlt, 1)}${u}（${pct_}）<br><span style="color:var(--ink-3);font-weight:400;font-size:11px">${valStr}</span></div>
+      </div>`;
+    }).join("")}
+  `;
+  $("cmp-result").innerHTML = html;
 }
 
 // ========== 时间序列：5 指标 × 6 期小图 ==========

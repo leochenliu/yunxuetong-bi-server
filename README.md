@@ -64,12 +64,30 @@
 
 ## 三、快速开始
 
-```bash
-# 0) 依赖（建议用独立虚拟环境）
-pip install -r requirements.txt
+### 创建并激活虚拟环境（Windows）
+
+在项目根目录执行以下命令。项目使用 Python 3.13：
+
+```powershell
+python --version
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
+
+如果使用命令提示符（CMD），激活命令为：
+
+```bat
+.venv\Scripts\activate.bat
+```
+
+完成后可用 `deactivate` 退出虚拟环境。之后重新打开终端时，需要再次执行对应的激活命令。
+
+```powershell
+# 设置本次终端会话的模块搜索路径
+$env:PYTHONPATH = "src"
 
 # 1) 灌数据：入站 D1、派生 D2、建立差分事件（幂等，可反复跑）
-export PYTHONPATH=src                  # Windows PowerShell: $env:PYTHONPATH="src"
 python -m bi.cli seed
 
 # 2) 看差分文字报告
@@ -271,4 +289,3 @@ scripts/acceptance.py 端到端验收 → docs/ACCEPTANCE.md
   业务专属钩子。**当前数据下**：潜在流失率因缺「单位-应报课程」表无法可靠回答
   （Agent 会显式说明缺什么）；证书快到期因 D1 开班日期都在近一年命中 0 人
   （逻辑就位，等历史批次即生效）。详见 `config/goals.yaml` 顶部注释。
-

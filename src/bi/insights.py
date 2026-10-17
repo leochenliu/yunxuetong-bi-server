@@ -16,7 +16,7 @@ import datetime as _dt
 from collections import Counter
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from .config import load_dataset_config
 from .derive import parse_class_code
@@ -338,3 +338,64 @@ def metrics_timeseries(
     fs = FactStore(settings)
     rows = fs.metric_timeseries(key, from_batch=from_batch, to_batch=to_batch)
     return {"metric_key": key, "from": from_batch, "to": to_batch, "points": rows}
+
+
+@router.get("/metrics/timeseries/diff", summary="任意两期指标对比")
+def metrics_timeseries_diff(
+    a: str = Query(..., description="A 批次（基期）"),
+    b: str = Query(..., description="B 批次（对比期）"),
+) -> dict[str, Any]:
+    """任意两期之间的指标差值。
+
+    与 /diffs/summary 的区别：
+    - /diffs/summary 仅依赖 diff_events（字段级事件，要求已算过差分）
+    - 本端点直接从 metric_snapshots 拿 A / B 两期值做减法，不依赖 diff_events 存在
+    """
+    settings = get_settings()
+    fs = FactStore(settings)
+
+    def _snap(batch: str) -> dict[str, dict[str, Any]]:
+        return fs.metric_snapshot(batch)
+
+    sa, sb = _snap(a), _snap(b)
+    if not sa:
+        raise HTTPException(404, f"批次不存在: {a}")
+    if not sb:
+        raise HTTPException(404, f"批次不存在: {b}")
+
+    keys = sorted(set(sa) & set(sb))
+    if not keys:
+        raise HTTPException(404, f"{a} 与 {b} 没有共同指标")
+
+    items = []
+    for k in keys:
+        va, vb = sa[k]["value"], sb[k]["value"]
+        if va is None or vb is None:
+            items.append({"metric_key": k, "metric_name": sa[k].get("metric_name"),
+                          "a": va, "b": vb, "delta": None,
+                          "delta_pct": None, "unit": sa[k].get("unit"),
+                          "comparable": False})
+            continue
+        delta = round(vb - va, 6)
+        pct_ = round(delta / va * 100, 2) if va else None
+        items.append({"metric_key": k, "metric_name": sa[k].get("metric_name"),
+                      "a": va, "b": vb, "delta": delta,
+                      "delta_pct": pct_, "unit": sa[k].get("unit"),
+                      "comparable": True})
+
+    # 排序：delta 绝对值大 → 小，领导一眼看出"最值得讨论的几个"
+    items.sort(key=lambda x: abs(x["delta"]) if x["delta"] is not None else 0, reverse=True)
+
+    # 顶部判读：a→b 的总变化（仅"可比"项）
+    comparable = [i for i in items if i["comparable"]]
+    n_up = sum(1 for i in comparable if (i["delta"] or 0) > 0)
+    n_down = sum(1 for i in comparable if (i["delta"] or 0) < 0)
+    n_flat = sum(1 for i in comparable if (i["delta"] or 0) == 0)
+
+    return {
+        "a": a,
+        "b": b,
+        "summary": {"up": n_up, "down": n_down, "flat": n_flat,
+                    "comparable": len(comparable)},
+        "items": items,
+    }

@@ -139,6 +139,70 @@ def test_metrics_timeseries_endpoint(demo_loaded):
     assert len(body["points"]) == 6  # 4 个历史 + D1 + D2
 
 
+def test_timeseries_diff_between_two_real_batches(demo_loaded):
+    """任意两期对比：D1 vs D2（相邻真实期）。"""
+    from fastapi.testclient import TestClient
+    from bi.api import app
+    c = TestClient(app)
+    r = c.get("/metrics/timeseries/diff", params={"a": "20261012", "b": "20261013"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["a"] == "20261012" and body["b"] == "20261013"
+    assert body["summary"]["comparable"] == 5
+    items = {i["metric_key"]: i for i in body["items"]}
+    # D1 vs D2：报名总人数应 +4
+    assert items["enrolled_total"]["delta"] == 4
+    # 已通过 +39
+    assert items["exam_passed"]["delta"] == 39
+    # 已付款 +15
+    assert items["paid_count"]["delta"] == 15
+
+
+def test_timeseries_diff_far_apart_batches(demo_loaded):
+    """跨期对比：示例期 20260619 vs 真实 D2 20261013。
+    这是真实业务"4 个月前 vs 现在"的视角。"""
+    from fastapi.testclient import TestClient
+    from bi.api import app
+    c = TestClient(app)
+    r = c.get("/metrics/timeseries/diff", params={"a": "20260619", "b": "20261013"})
+    assert r.status_code == 200
+    body = r.json()
+    # demo 期 688 → D2 887 = +199
+    enrolled = next(i for i in body["items"] if i["metric_key"] == "enrolled_total")
+    assert enrolled["delta"] == 199
+    assert enrolled["delta_pct"] == round(199 / 688 * 100, 2)
+
+
+def test_timeseries_diff_items_sorted_by_abs_delta(demo_loaded):
+    """items 应按 |delta| 降序——领导一眼看出"最值得讨论的几个"。"""
+    from fastapi.testclient import TestClient
+    from bi.api import app
+    c = TestClient(app)
+    r = c.get("/metrics/timeseries/diff", params={"a": "20261012", "b": "20261013"})
+    items = r.json()["items"]
+    abs_deltas = [abs(i["delta"]) for i in items if i["delta"] is not None]
+    assert abs_deltas == sorted(abs_deltas, reverse=True), f"未按 |delta| 降序：{abs_deltas}"
+
+
+def test_timeseries_diff_404_for_missing_batch(demo_loaded):
+    """不存在的批次应 404。"""
+    from fastapi.testclient import TestClient
+    from bi.api import app
+    c = TestClient(app)
+    r = c.get("/metrics/timeseries/diff", params={"a": "20999999", "b": "20261013"})
+    assert r.status_code == 404
+    assert "20999999" in r.json()["detail"]
+
+
+def test_timeseries_diff_422_for_missing_param(demo_loaded):
+    """缺 b 应 422（FastAPI 自动）。"""
+    from fastapi.testclient import TestClient
+    from bi.api import app
+    c = TestClient(app)
+    r = c.get("/metrics/timeseries/diff", params={"a": "20261012"})
+    assert r.status_code == 422
+
+
 def test_historical_generator_deterministic():
     """make_historical_batches 是 deterministic 的（无 random）。"""
     from pathlib import Path

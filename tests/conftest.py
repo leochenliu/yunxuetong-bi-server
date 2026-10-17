@@ -61,6 +61,54 @@ def ground_truth(settings: Settings, batches) -> dict:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _ensure_only_d1_d2(settings: Settings):
+    """任何测试开始前，确保库里没有 4 个示例历史期（20260619/0719/0818/0917）。
+
+    test_timeseries.py 自己也管理这 4 个 demo 期，但它的 demo_loaded 是函数级
+    夹具，测试完会清。如果它跑完后其他测试再跑，库是干净的。但如果手动
+    跑了入库脚本或在演示环境里 demo 期被持久化了，这条会自动清理。
+    """
+    import sqlite3
+    DEMO = ("20260619", "20260719", "20260818", "20260917")
+    c = sqlite3.connect(settings.db_path)
+    try:
+        v_ids = [r[0] for r in c.execute(
+            "SELECT id FROM upload_versions WHERE batch IN (?,?,?,?)", DEMO
+        ).fetchall()]
+        for vid in v_ids:
+            c.execute("DELETE FROM metric_snapshots WHERE version_id=?", (vid,))
+            c.execute("DELETE FROM raw_records WHERE version_id=?", (vid,))
+            c.execute("DELETE FROM anomalies WHERE version_id=?", (vid,))
+        if v_ids:
+            c.execute(f"DELETE FROM upload_versions WHERE id IN ({','.join('?' * len(v_ids))})", v_ids)
+        c.commit()
+    finally:
+        c.close()
+    yield
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _disable_llm_in_tests():
+    """测试套件：禁用 LLM 通道。LLM 走网络，测试应该快速且确定性。
+
+    agent 测试断言基于本地模板的固定段落（【结论】等），不验证 LLM 输出。
+    如需手动验证 LLM 路径，跑 `scripts/acceptance.py`（不强制走 LLM）。
+    """
+    import os
+    saved = {k: os.environ.get(k) for k in ("BI_LLM_BASE_URL", "BI_LLM_API_KEY", "BI_LLM_MODEL")}
+    for k in saved:
+        os.environ[k] = ""  # 强制 get_settings() 视为"未配置"
+    # 重新创建 settings 单例
+    from bi import settings as _s
+    _s._settings = None
+    yield
+    for k, v in saved.items():
+        if v is not None:
+            os.environ[k] = v
+    _s._settings = None
+
+
 @pytest.fixture(scope="session")
 def seeded(settings: Settings, batches) -> dict:
     """库中已灌入两期 + 差分事件。"""

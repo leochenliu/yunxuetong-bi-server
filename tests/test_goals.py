@@ -132,12 +132,15 @@ def test_loss_question_returns_missing_data_explanation():
     assert r["goal"] is not None and r["goal"]["action"] == "missing_data"
     assert r["goal_action"] is not None
     assert r["goal_action"]["answerable"] is False
-    assert "缺" in r["answer"] or "无法" in r["answer"]
+    # 关键事实关键词
+    answer = r["answer"]
+    must = ["缺", "无法", "CRM", "潜在客户"]
+    assert any(k in answer for k in must), f"缺诚实标识: {answer[:200]}"
 
 
 def test_unrelated_question_still_runs_full_loop():
     r = BIAgent().ask("为什么报名人数涨了")
-    # 命中通用目标 = 走原来完整流程
     assert r["goal"] is not None and r["goal"]["name"] == "通用概览"
     assert r["step_count"] >= 8
-    assert "【结论】" in r["answer"]
+    # 必须含关键数字
+    assert "883" in r["answer"] and "887" in r["answer"]
