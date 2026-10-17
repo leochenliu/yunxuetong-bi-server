@@ -301,6 +301,7 @@ def insights_data(batch: str = Query(None, description="批次（默认最新）
     teachers = _teacher_workload(rows)
     funnel = _signed_unpaid_funnel(rows)
 
+<<<<<<< HEAD
     # 时间序列：5 个核心指标 × 全部已有版本（按批次升序）
     from .config import load_metrics_config
     metric_defs = load_metrics_config(settings.metrics_config_path)
@@ -310,6 +311,8 @@ def insights_data(batch: str = Query(None, description="批次（默认最新）
         if ts:
             timeseries[m.key] = ts
 
+=======
+>>>>>>> origin/main
     from .store import FactStore as _FS
     _FS(settings).audit("insights_data", {"batch": batch}, 4, duration_ms=int((__import__("time").perf_counter() - t0) * 1000))
 
@@ -320,6 +323,7 @@ def insights_data(batch: str = Query(None, description="批次（默认最新）
         "progress": progress,
         "teachers": teachers,
         "funnel": funnel,
+<<<<<<< HEAD
         "timeseries": timeseries,
         "demo_batches": [v["batch"] for v in fs.list_versions()
                           if v.get("is_demo")],
@@ -338,3 +342,6 @@ def metrics_timeseries(
     fs = FactStore(settings)
     rows = fs.metric_timeseries(key, from_batch=from_batch, to_batch=to_batch)
     return {"metric_key": key, "from": from_batch, "to": to_batch, "points": rows}
+=======
+    }
+>>>>>>> origin/main
