@@ -58,8 +58,28 @@
   .pill{font-size:10.5px;padding:1.5px 7px;border-radius:999px;font-weight:600}
   .pill.ok{background:var(--ok-bg);color:var(--ok)} .pill.warn{background:var(--warn-bg);color:var(--warn)}
 
-  .answer{white-space:pre-wrap;word-break:break-word;font-size:13.5px;line-height:1.85}
+  .answer{word-break:break-word;font-size:13.5px;line-height:1.85}
   .answer .sec{font-weight:650;color:var(--indigo)}
+  .answer p{margin:0 0 10px}
+  .answer p:last-child{margin-bottom:0}
+  .answer h1,.answer h2,.answer h3,.answer h4{color:var(--ink);letter-spacing:0;text-transform:none;
+    display:block;line-height:1.4;margin:17px 0 8px}
+  .answer h1{font-size:20px}.answer h2{font-size:18px}.answer h3{font-size:16px}.answer h4{font-size:14px}
+  .answer h1::after,.answer h2::after,.answer h3::after,.answer h4::after{display:none}
+  .answer ul,.answer ol{margin:4px 0 12px;padding-left:24px}
+  .answer li{padding-left:2px}
+  .answer blockquote{margin:10px 0;padding:7px 13px;border-left:3px solid #c7c3ff;
+    background:#f8f8ff;color:var(--ink-2)}
+  .answer blockquote p{margin:0}
+  .answer code{font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:.9em;
+    background:#f1f2f8;padding:2px 5px;border-radius:4px;color:#4338ca}
+  .answer pre{overflow:auto;padding:12px 14px;background:#f7f8fc;border:1px solid var(--line-2);
+    border-radius:8px;line-height:1.6}
+  .answer pre code{padding:0;background:none;color:inherit}
+  .answer table{width:100%;border-collapse:collapse;margin:10px 0 14px;font-size:12.5px}
+  .answer th,.answer td{border:1px solid var(--line);padding:6px 9px;text-align:left}
+  .answer th{background:#f7f8fc;font-weight:650}
+  .answer a{color:var(--indigo);text-decoration:underline}
 
   .steps{display:flex;flex-direction:column;gap:9px}
   .step{background:#fff;border:1px solid var(--line);border-radius:11px;overflow:hidden}
@@ -97,7 +117,11 @@
   .empty{color:var(--ink-3);font-size:13px;padding:26px 0;text-align:center}
   .spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.45);
     border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px;margin-right:7px}
+  .spin.loading{width:22px;height:22px;border-color:#dcd9ff;border-top-color:var(--indigo);
+    margin:0;vertical-align:middle}
+  .loading-state{display:flex;justify-content:center;align-items:center;gap:10px;min-height:90px}
   @keyframes sp{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.spin{animation-duration:1.8s}}
   .banner{border-radius:10px;padding:11px 14px;font-size:13px;margin-top:14px;display:none}
   .banner.show{display:block}
   .banner.err{background:var(--err-bg);color:var(--err);border:1px solid #fecaca}
@@ -145,7 +169,7 @@
     <div class="steps" id="steps"></div>
   </div>
 
-  <div id="placeholder" class="empty">输入问题后，这里会显示可核查的推导过程。</div>
+  <div id="placeholder" class="empty" aria-live="polite">输入问题后，这里会显示可核查的推导过程。</div>
 
   <footer>
     <a href="/dashboard">业务驾驶舱</a> · <a href="/docs" target="_blank">API 文档</a> · <a href="/health" target="_blank">健康检查</a>
@@ -159,6 +183,131 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const num = (v, d = 0) => v === null || v === undefined ? "—"
   : Number(v).toLocaleString("zh-CN", { minimumFractionDigits: d, maximumFractionDigits: d });
+
+function renderMarkdown(source) {
+  const inline = (value) => {
+    const tokens = [];
+    const hold = (html) => {
+      const key = `\u0000${tokens.length}\u0000`;
+      tokens.push(html);
+      return key;
+    };
+    let text = String(value ?? "");
+
+    text = text.replace(/`([^`\n]+)`/g, (_, code) => hold(`<code>${esc(code)}</code>`));
+    text = text.replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g,
+      (_, label, href, title) => {
+        const safeHref = /^(https?:\/\/|mailto:)/i.test(href) || /^(\/|\.\/|\.\.\/|#)/.test(href);
+        if (!safeHref) return label;
+        const titleAttr = title ? ` title="${esc(title)}"` : "";
+        return hold(`<a href="${esc(href)}"${titleAttr} target="_blank" rel="noopener noreferrer">${esc(label)}</a>`);
+      });
+
+    let html = esc(text)
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/__(.+?)__/g, "<strong>$1</strong>")
+      .replace(/~~(.+?)~~/g, "<del>$1</del>")
+      .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>")
+      .replace(/(^|[^_])_([^_\n]+)_(?!_)/g, "$1<em>$2</em>")
+      .replace(/【([^】]+)】/g, '<span class="sec">【$1】</span>');
+    html = html.replace(/\u0000(\d+)\u0000/g, (_, index) => tokens[Number(index)]);
+    return html;
+  };
+
+  const lines = String(source ?? "").replace(/\r\n?/g, "\n").split("\n");
+  const output = [];
+  let paragraph = [];
+  let listType = null;
+  let listItems = [];
+
+  const flushParagraph = () => {
+    if (paragraph.length) {
+      output.push(`<p>${paragraph.map(inline).join("<br>")}</p>`);
+      paragraph = [];
+    }
+  };
+  const flushList = () => {
+    if (listType) {
+      output.push(`<${listType}>${listItems.map((item) => `<li>${inline(item)}</li>`).join("")}</${listType}>`);
+      listType = null;
+      listItems = [];
+    }
+  };
+  const isTableDelimiter = (line) => /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+  const tableCells = (line) => line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+
+  for (let i = 0; i < lines.length;) {
+    const line = lines[i];
+    if (/^\s*```/.test(line)) {
+      flushParagraph();
+      flushList();
+      const codeLines = [];
+      i += 1;
+      while (i < lines.length && !/^\s*```/.test(lines[i])) codeLines.push(lines[i++]);
+      if (i < lines.length) i += 1;
+      output.push(`<pre><code>${esc(codeLines.join("\n"))}</code></pre>`);
+      continue;
+    }
+    const heading = line.match(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/);
+    if (heading) {
+      flushParagraph();
+      flushList();
+      const level = heading[1].length;
+      output.push(`<h${level}>${inline(heading[2])}</h${level}>`);
+      i += 1;
+      continue;
+    }
+    if (i + 1 < lines.length && line.includes("|") && isTableDelimiter(lines[i + 1])) {
+      flushParagraph();
+      flushList();
+      const headers = tableCells(line);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) rows.push(tableCells(lines[i++]));
+      output.push(`<table><thead><tr>${headers.map((cell) => `<th>${inline(cell)}</th>`).join("")}</tr></thead><tbody>${
+        rows.map((row) => `<tr>${headers.map((_, index) => `<td>${inline(row[index] || "")}</td>`).join("")}</tr>`).join("")
+      }</tbody></table>`);
+      continue;
+    }
+    const listMatch = line.match(/^\s*(?:([-*+])|(\d+)\.)\s+(.+)$/);
+    if (listMatch) {
+      flushParagraph();
+      const nextType = listMatch[2] ? "ol" : "ul";
+      if (listType && listType !== nextType) flushList();
+      listType = nextType;
+      listItems.push(listMatch[3]);
+      i += 1;
+      continue;
+    }
+    if (/^\s*>\s?/.test(line)) {
+      flushParagraph();
+      flushList();
+      const quoteLines = [];
+      while (i < lines.length && /^\s*>\s?/.test(lines[i])) quoteLines.push(lines[i++].replace(/^\s*>\s?/, ""));
+      output.push(`<blockquote><p>${quoteLines.map(inline).join("<br>")}</p></blockquote>`);
+      continue;
+    }
+    if (/^\s*([-*_]\s*){3,}$/.test(line)) {
+      flushParagraph();
+      flushList();
+      output.push("<hr>");
+      i += 1;
+      continue;
+    }
+    if (!line.trim()) {
+      flushParagraph();
+      flushList();
+      i += 1;
+      continue;
+    }
+    flushList();
+    paragraph.push(line);
+    i += 1;
+  }
+  flushParagraph();
+  flushList();
+  return output.join("");
+}
 
 const EXAMPLES = [
   "为什么报名人数涨了？",
@@ -178,6 +327,16 @@ async function ask() {
   const btn = $("go");
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>查询中';
   $("err").classList.remove("show");
+  $("kpis").innerHTML = "";
+  $("answer").innerHTML = "";
+  $("evi").innerHTML = "";
+  $("evi-wrap").style.display = "none";
+  $("steps").innerHTML = "";
+  $("stepcount").textContent = "";
+  $("result").style.display = "none";
+  $("placeholder").classList.remove("empty");
+  $("placeholder").innerHTML = '<div class="loading-state"><span class="spin loading" aria-hidden="true"></span><span>正在查询，请稍候…</span></div>';
+  $("placeholder").style.display = "block";
 
   try {
     const res = await fetch("/agent/ask", {
@@ -190,6 +349,8 @@ async function ask() {
   } catch (e) {
     $("err").textContent = "查询失败：" + e.message;
     $("err").classList.add("show");
+    $("placeholder").textContent = "查询未完成，请检查错误提示后重试。";
+    $("placeholder").classList.add("empty");
   } finally {
     btn.disabled = false; btn.textContent = "提问";
   }
@@ -241,8 +402,7 @@ function render(d) {
       ${note ? `<div class="note">${esc(note)}</div>` : ""}
       <div class="meta">${meta.join("")}</div></div>`;
   }
-  $("answer").innerHTML = goalHtml + esc(d.answer || "")
-    .replace(/【([^】]+)】/g, '<span class="sec">【$1】</span>');
+  $("answer").innerHTML = goalHtml + renderMarkdown(d.answer || "");
 
   // ---- 证据 ----
   const evi = d.evidence || [];
