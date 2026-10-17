@@ -8,7 +8,6 @@ timeseries 测试自己 ingest + 清理。
 from __future__ import annotations
 
 import shutil
-import sqlite3
 from pathlib import Path
 
 import pytest
@@ -52,9 +51,8 @@ def demo_loaded():
 
 def _cleanup_demo(store: FactStore) -> None:
     """清理掉 4 个示例历史期。"""
-    c = sqlite3.connect(store.db_path)
-    try:
-        v_ids = [r[0] for r in c.execute(
+    with store.connect() as c:
+        v_ids = [r["id"] for r in c.execute(
             "SELECT id FROM upload_versions WHERE batch IN (?,?,?,?)",
             DEMO_BATCHES).fetchall()]
         for vid in v_ids:
@@ -63,9 +61,6 @@ def _cleanup_demo(store: FactStore) -> None:
             c.execute("DELETE FROM anomalies WHERE version_id=?", (vid,))
         if v_ids:
             c.execute(f"DELETE FROM upload_versions WHERE id IN ({','.join('?' * len(v_ids))})", v_ids)
-        c.commit()
-    finally:
-        c.close()
 
 
 def test_timeseries_metric_returns_points_in_order(demo_loaded):

@@ -29,9 +29,17 @@ def test_health():
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok"
+    assert body["db_backend"] in {"sqlite", "postgresql"}
     assert F in body["batches"] and T in body["batches"]
     assert body["records"][F] == 883
     assert body["records"][T] == 887
+
+
+def test_api_startup_initializes_database(settings):
+    with TestClient(app) as startup_client:
+        response = startup_client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["db_backend"] in {"sqlite", "postgresql"}
 
 
 def test_metric_compare_values_and_direction():

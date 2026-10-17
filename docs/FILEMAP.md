@@ -41,14 +41,14 @@ yunxuetong-bi-server/
 │   ├── cli.py                   命令行总入口
 │   └── __init__.py
 │
-├── tests/                       61 个测试，按阶段划分
+├── tests/                       测试套件，按阶段划分
 ├── scripts/acceptance.py        端到端验收 → docs/ACCEPTANCE.md
 ├── web/index.html               ⑤ 对话页（单文件）
 ├── web/dashboard.html           业务运营驾驶舱（原生 SVG 图表）
 ├── docs/                        ACCEPTANCE.md / FILEMAP.md
 └── data/                        运行期数据（不入库）
     ├── inbound/<批次>/*.xlsx     原始 Excel（含 PII）
-    └── store/                    SQLite 事实库 + ground truth
+    └── store/                    SQLite 事实库 / ground truth（PostgreSQL 可选）
 ```
 
 ---
@@ -135,7 +135,7 @@ yunxuetong-bi-server/
 
 ---
 
-## 五、tests/ — 61 个测试
+## 五、tests/ — 按阶段划分
 
 | 文件 | 覆盖 |
 |---|---|
@@ -159,7 +159,8 @@ yunxuetong-bi-server/
 | `web/dashboard.html` | 业务运营驾驶舱。以原生 SVG / CSS 呈现核心 KPI 与批次趋势、报名月份、考试状态与分数、缴费开票、课程月份热力图、人员画像及异常统计；通过 `/dashboard/data` 获取聚合数据。 |
 | `docs/ACCEPTANCE.md` | 由验收脚本生成的实测报告（含真实数字）。 |
 | `data/inbound/<批次>/(登高)总表.xlsx` | 原始数据。`20261012` 为真实数据，`20261013` 为派生数据。 |
-| `data/store/bi.sqlite3` | SQLite 事实库。 |
+| `data/store/bi.sqlite3` | 默认 SQLite 事实库；设置 `BI_DATABASE_URL` 时使用 PostgreSQL。 |
+| `scripts/migrate_sqlite_to_postgres.py` | 将 SQLite 六张事实表复制到空 PostgreSQL 数据库，保留 ID 与关联关系。 |
 | `data/store/ground_truth_*.json` | D2 生成时记录的正确答案，供 `test_diff.py` 对账。 |
 | `.workbuddy/memory/*.md` | 项目工作日志与长期约定（含踩坑记录）。 |
 

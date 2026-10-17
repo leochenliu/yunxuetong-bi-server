@@ -19,6 +19,7 @@ def test_watcher_waits_for_stable_configured_files_and_processes_once(tmp_path):
     settings = replace(
         get_settings(),
         db_path=tmp_path / "store" / "bi.sqlite3",
+        database_url=None,
         inbound_dir=batch_dir.parent,
         config_dir=ROOT / "config",
     )

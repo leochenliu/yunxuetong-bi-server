@@ -69,11 +69,12 @@ def _ensure_only_d1_d2(settings: Settings):
     夹具，测试完会清。如果它跑完后其他测试再跑，库是干净的。但如果手动
     跑了入库脚本或在演示环境里 demo 期被持久化了，这条会自动清理。
     """
-    import sqlite3
+    from bi.store import FactStore
+
     DEMO = ("20260619", "20260719", "20260818", "20260917")
-    c = sqlite3.connect(settings.db_path)
-    try:
-        v_ids = [r[0] for r in c.execute(
+    store = FactStore(settings)
+    with store.connect() as c:
+        v_ids = [r["id"] for r in c.execute(
             "SELECT id FROM upload_versions WHERE batch IN (?,?,?,?)", DEMO
         ).fetchall()]
         for vid in v_ids:
@@ -82,9 +83,6 @@ def _ensure_only_d1_d2(settings: Settings):
             c.execute("DELETE FROM anomalies WHERE version_id=?", (vid,))
         if v_ids:
             c.execute(f"DELETE FROM upload_versions WHERE id IN ({','.join('?' * len(v_ids))})", v_ids)
-        c.commit()
-    finally:
-        c.close()
     yield
 
 

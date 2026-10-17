@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 import time
 from typing import Any
 
@@ -28,10 +30,18 @@ from .store import FactStore
 
 MAX_LIMIT = 500
 
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    store().init_schema()
+    yield
+
+
 app = FastAPI(
     title="云学通 BI 差分服务",
     version="0.1.0",
     description="Excel 差分 -> 事实存储 -> 固定查询 API -> MCP -> 自然语言 Agent",
+    lifespan=lifespan,
 )
 app.add_middleware(
     CORSMiddleware,
@@ -66,7 +76,8 @@ def health() -> dict[str, Any]:
     versions = s.list_versions()
     return {
         "status": "ok",
-        "db": str(s.db_path),
+        "db": s.backend if s.backend == "postgresql" else str(s.db_path),
+        "db_backend": s.backend,
         "batches": [v["batch"] for v in versions],
         "records": {v["batch"]: v["record_count"] for v in versions},
     }

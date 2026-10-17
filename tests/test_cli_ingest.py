@@ -51,6 +51,7 @@ def test_configured_files_ingest_as_separate_datasets_and_mask_pii(tmp_path):
     settings = replace(
         get_settings(),
         db_path=tmp_path / "store" / "bi.sqlite3",
+        database_url=None,
         inbound_dir=inbound.parent,
         config_dir=ROOT / "config",
     )
@@ -139,6 +140,7 @@ severity:
     settings = replace(
         get_settings(),
         db_path=tmp_path / "store" / "bi.sqlite3",
+        database_url=None,
         inbound_dir=inbound,
         config_dir=config_dir,
     )

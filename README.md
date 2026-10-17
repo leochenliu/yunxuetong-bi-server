@@ -33,7 +33,7 @@
         │
         │ ② 落库
         ▼
-   FactStore (SQLite)
+   FactStore (SQLite / PostgreSQL)
    upload_versions · raw_records · diff_events · metric_snapshots · anomalies · audit_log
         │
         │ ③ 固定查询
@@ -98,7 +98,7 @@ python -m bi.cli api                   # http://127.0.0.1:8787/
 # 驾驶舱：http://127.0.0.1:8787/dashboard
 
 # 4) 单测 / 验收
-pytest -q                              # 61 passed
+pytest -q                              # 运行全部测试
 python scripts/acceptance.py           # 生成 docs/ACCEPTANCE.md
 ```
 
@@ -130,6 +130,27 @@ MCP 接入（stdio）：
     "command": "python", "args": ["-m", "bi.mcp_server"],
     "env": { "PYTHONPATH": "src", "BI_MCP_MAX_LIMIT": "200" } } } }
 ```
+
+### PostgreSQL 后端（可选）
+
+默认继续使用本地 SQLite。设置 `BI_DATABASE_URL` 后，API、CLI、watcher 和 MCP
+会改用 PostgreSQL，并在 API 启动或首次入库时自动创建所需表；`BI_DATABASE_URL` 优先于 `BI_DB_PATH`。
+安装依赖后，在 `.env` 或进程环境中配置连接串：
+
+```dotenv
+BI_DATABASE_URL=postgresql://用户名:密码@数据库主机:5432/yunxuetong_bi
+```
+
+请将生产连接串存放在部署环境的密钥管理中，不要提交真实密码。切换后 SQLite 中已有数据
+不会自动复制到 PostgreSQL。迁移本地 SQLite 中的六张事实表时，先配置目标连接串并运行：
+
+```powershell
+$env:BI_DATABASE_URL = "postgresql://用户名:密码@数据库主机:5432/yunxuetong_bi"
+python scripts/migrate_sqlite_to_postgres.py
+```
+
+脚本保留现有主键与外键关系，要求目标表为空，不会覆盖已有数据；完成后将连接串放入
+`.env` 或部署密钥配置，再正常启动服务。健康检查只显示数据库类型，不会返回连接串或密码。
 
 ---
 
@@ -285,7 +306,7 @@ src/bi/
   anomaly.py          ① 异常检测
   metrics.py          ① 指标计算
   simulate.py         D2 派生 + ground truth
-  store.py            ② SQLite 事实存储
+  store.py            ② SQLite / PostgreSQL 事实存储
   api.py              ③ FastAPI 固定查询
   attribution.py      ③ 指标归因
   mcp_server.py       ④ MCP 只读工具
@@ -293,7 +314,7 @@ src/bi/
   ingest.py / seed.py / cli.py / settings.py
 web/index.html        ⑤ 对话页（浅色 · 单文件 · 无外部依赖）
 web/dashboard.html    业务驾驶舱（图表优先，聚合展示多数据集指标）
-tests/                61 个测试（阶段一~五）
+tests/                测试套件（阶段一~五）
 scripts/acceptance.py 端到端验收 → docs/ACCEPTANCE.md
 ```
 

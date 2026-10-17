@@ -53,6 +53,7 @@ def _resolve(value: str, base: Path) -> Path:
 @dataclass(frozen=True)
 class Settings:
     db_path: Path
+    database_url: str | None
     config_dir: Path
     inbound_dir: Path
     store_pii_plaintext: bool
@@ -87,6 +88,7 @@ def load_settings(env_file: str | Path | None = None) -> Settings:
     root = PROJECT_ROOT
     return Settings(
         db_path=_resolve(os.environ.get("BI_DB_PATH", "./data/store/bi.sqlite3"), root),
+        database_url=os.environ.get("BI_DATABASE_URL", "").strip() or None,
         config_dir=_resolve(os.environ.get("BI_CONFIG_DIR", "./config"), root),
         inbound_dir=_resolve(os.environ.get("BI_INBOUND_DIR", "./data/inbound"), root),
         store_pii_plaintext=_env_bool("BI_STORE_PII_PLAINTEXT", False),

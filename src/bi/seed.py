@@ -73,5 +73,7 @@ def seed_all(from_batch: str = BATCH_1, to_batch: str = BATCH_2) -> dict:
     for f in summary["by_field"]:
         print(f"    {f['field']:<10} {f['count']:>4}  [{f['severity']}]")
 
-    print(f"\n库文件: {settings.db_path}")
+    store = FactStore(settings)
+    location = store.backend if store.backend == "postgresql" else str(settings.db_path)
+    print(f"\n数据库: {location}")
     return {"v1": v1, "v2": v2, "events": n_events, "summary": summary}

@@ -9,14 +9,14 @@
 
 ## 一、项目是什么
 
-**yunxuetong-bi-server**：把「云学通」培训业务**每日导出的 Excel 总表**变成一条可追问、可核查的数字链路（Python 3.13 + FastAPI + SQLite + FastMCP）。
+**yunxuetong-bi-server**：把「云学通」培训业务**每日导出的 Excel 总表**变成一条可追问、可核查的数字链路（Python 3.13 + FastAPI + SQLite/PostgreSQL + FastMCP）。
 
 ```
 data/inbound/<批次>/(登高)总表.xlsx
    │
    │ ① excel_reader → derive（口径过滤+派生列）→ diff_engine / anomaly / metrics
    ▼
- ingest ─► ② FactStore (SQLite 6 张表)
+ ingest ─► ② FactStore (SQLite/PostgreSQL 6 张表)
    │
    ▼
  ③ FastAPI  /metrics/compare · /diffs/summary · /diffs/records · /evidence/{id}
@@ -60,7 +60,7 @@ python -m bi.cli metrics 20261013       # 指标快照
 python -m bi.cli simulate 20261012 20261013  # 重新派生 D2（会覆盖数据 + 重写 ground truth）
 python -m bi.cli api                    # 启动服务 + 对话页：http://127.0.0.1:8787/
 
-pytest -q                               # 61 个测试（阶段一~五）
+pytest -q                               # 全部测试（阶段一~五）
 python scripts/acceptance.py            # 端到端验收 → docs/ACCEPTANCE.md
 ```
 
@@ -91,16 +91,16 @@ C:/Users/leoch/.workbuddy/binaries/python/envs/default/Scripts/python.exe
 | `src/bi/ingest.py` | 阶段一→二编排，产出 `Ingested` |
 | `src/bi/simulate.py` | 从真实 D1 派生 D2 + 记录 ground truth |
 | `src/bi/seed.py` | 灌数据入口（**批次常量硬编码在此**，见雷区 5.5） |
-| `src/bi/store.py` | 事实存储：6 张表 schema + 写入 + 查询 + 隐私掩码 |
+| `src/bi/store.py` | 事实存储：SQLite/PostgreSQL 6 张表 schema + 写入 + 查询 + 隐私掩码 |
 | `src/bi/api.py` | FastAPI 端点（只读 + Agent + 托管首页） |
 | `src/bi/attribution.py` | 指标归因（`VALUE_RULES` / `EMPTY_RULES`） |
 | `src/bi/mcp_server.py` | MCP 只读工具 + 限额 + 审计（**不直连数据库，走 HTTP API**） |
 | `src/bi/agent.py` | 自然语言闭环（条件驱动，非固定流水线） |
 | `src/bi/cli.py` | 命令行总入口 |
-| `tests/` | 按阶段划分的 61 个测试，`conftest.py` 提供自动派生夹具 |
+| `tests/` | 按阶段划分的测试，`conftest.py` 提供自动派生夹具 |
 | `web/index.html` | 对话页（单文件、无外部依赖、浅色主题） |
 | `data/inbound/` | 原始 Excel（**含 PII，已 gitignore**） |
-| `data/store/` | SQLite 事实库 + ground truth JSON（**已 gitignore**） |
+| `data/store/` | SQLite 事实库（PostgreSQL 可选）+ ground truth JSON（**已 gitignore**） |
 
 ---
 
@@ -183,7 +183,7 @@ C:/Users/leoch/.workbuddy/binaries/python/envs/default/Scripts/python.exe
 ## 八、改动后的自检清单
 
 ```bash
-pytest -q                       # 必须全绿（当前 61 passed）
+pytest -q                       # 必须全绿
 python scripts/acceptance.py    # 五阶段端到端必须跑通，且与 ground truth 逐条对账一致
 ```
 

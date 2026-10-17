@@ -82,7 +82,7 @@ def main() -> int:
            if d2.anomalies else ""))
 
     # ================= 阶段二 =================
-    hr("阶段二 · 事实存储（SQLite）")
+    hr("阶段二 · 事实存储")
     store = FactStore(settings)
     versions = store.list_versions()
     for v in versions:
@@ -95,7 +95,8 @@ def main() -> int:
                             "metric_snapshots", "anomalies", "audit_log")}
     out()
     out("  表行数：" + "、".join(f"{k} {v}" for k, v in counts.items()))
-    out(f"  库文件：{store.db_path}")
+    location = store.backend if store.backend == "postgresql" else str(store.db_path)
+    out(f"  数据库：{location}")
     out(f"  隐私：证件号明文落库={'是' if settings.store_pii_plaintext else '否（仅 sha256 + 掩码）'}")
 
     # ================= 阶段三 =================
@@ -161,7 +162,7 @@ def main() -> int:
 
     hr("汇总")
     out(f"  五阶段全部跑通，用时 {time.perf_counter() - t_all:.1f}s")
-    out(f"  单元测试：61 passed（阶段一~五）")
+    out("  单元测试：请单独运行 pytest -q（本脚本不运行单测）")
     out(f"  可核查：每个结论都能经 API -> MCP -> 证据链 回到原始 Excel 的具体行")
     out(f"  对话页：启动 `python -m bi.cli api` 后访问 http://{settings.api_host}:{settings.api_port}/")
 
