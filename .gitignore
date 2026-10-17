@@ -20,3 +20,4 @@ data/store/
 # 生成产物
 out/
 *.log
+d.json
