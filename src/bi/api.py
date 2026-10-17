@@ -104,6 +104,35 @@ def versions() -> dict[str, Any]:
     return {"items": items, "count": len(items)}
 
 
+@app.get("/courses/enrollments", summary="按课程数查询学员报名明细")
+def course_enrollments(
+    batch: str | None = Query(None, description="课程明细批次；省略时使用最新批次"),
+    min_courses: int = Query(2, ge=1, le=100, description="至少报名的不同课程数"),
+    limit: int = Query(50, ge=1, le=MAX_LIMIT),
+    offset: int = Query(0, ge=0),
+) -> dict[str, Any]:
+    t0 = time.perf_counter()
+    try:
+        result = store().course_enrollment_stats(batch, min_courses, limit, offset)
+    except LookupError as exc:
+        _audit(
+            "course_enrollments",
+            {"batch": batch, "min_courses": min_courses, "limit": limit, "offset": offset},
+            None,
+            t0,
+            status="error",
+            message=str(exc),
+        )
+        raise HTTPException(404, str(exc)) from exc
+    _audit(
+        "course_enrollments",
+        {"batch": result["batch"], "min_courses": min_courses, "limit": limit, "offset": offset},
+        result["returned"],
+        t0,
+    )
+    return result
+
+
 @app.get("/metrics/compare", summary="指标对比（含变化归因）")
 def metrics_compare(
     from_batch: str = Query(..., alias="from", description="基期批次，如 20261012"),

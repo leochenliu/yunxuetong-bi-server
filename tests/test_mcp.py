@@ -28,10 +28,11 @@ def test_no_write_tools_registered():
             or "trace" in low or "batch" in low, fn.__name__
 
 
-def test_tool_set_is_exactly_six_readonly_capabilities():
+def test_tool_set_is_exactly_seven_readonly_capabilities():
     names = {fn.__name__ for fn in M.TOOLS}
     assert names == {
         "bi_list_batches",
+        "bi_list_course_enrollments",
         "bi_compare_metrics",
         "bi_diff_summary",
         "bi_diff_records",

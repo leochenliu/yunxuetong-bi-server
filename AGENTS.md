@@ -22,7 +22,7 @@ data/inbound/<批次>/(登高)总表.xlsx
  ③ FastAPI  /metrics/compare · /diffs/summary · /diffs/records · /evidence/{id}
    │
    ▼
- ④ FastMCP   6 个只读工具（限额 + 白名单 + 审计）
+ ④ FastMCP   7 个只读工具（限额 + 白名单 + 审计）
    │
    ▼
  ⑤ BIAgent   提问 → 多轮查询 → 发现异常 → 追溯证据 → 生成解释

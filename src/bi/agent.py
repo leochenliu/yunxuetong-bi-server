@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -38,12 +39,39 @@ INTENT_KEYWORDS: dict[str, list[str]] = {
     "diff": ["变了", "差异", "对比", "变动", "区别", "新增", "减少", "变化", "差"],
 }
 
+_COURSE_NUMBER_WORDS = {
+    "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
+    "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
+}
+
 
 def detect_intent(question: str) -> str:
     for intent, kws in INTENT_KEYWORDS.items():
         if any(k in question for k in kws):
             return intent
     return "overview"
+
+
+def _course_query_minimum(question: str) -> int | None:
+    """识别按报名课程门数查询的问法，并返回包含边界的最小门数。"""
+    if not any(word in question for word in ("课程", "科目")):
+        return None
+    if not any(word in question for word in ("报名", "报了", "报考", "参加")):
+        return None
+
+    number = r"(\d+|[一二两三四五六七八九十])"
+    greater = re.search(rf"超过\s*{number}\s*门", question)
+    if greater:
+        token = greater.group(1)
+        return int(token) + 1 if token.isdigit() else _COURSE_NUMBER_WORDS[token] + 1
+
+    threshold = re.search(rf"(?:至少|不少于)?\s*{number}\s*门\s*(?:以上|及以上|或以上)?", question)
+    if threshold:
+        token = threshold.group(1)
+        return int(token) if token.isdigit() else _COURSE_NUMBER_WORDS[token]
+    if "多门" in question:
+        return 2
+    return None
 
 
 # ============================================================================
@@ -139,6 +167,73 @@ class BIAgent:
                 summary = summarizer(result)
             steps.append(AgentStep(len(steps) + 1, tool, params, reason, summary, result, ms))
             return result
+
+        course_minimum = _course_query_minimum(question)
+        if course_minimum is not None:
+            batch_match = re.search(r"(?<!\d)\d{6,10}(?!\d)", question)
+            batch = batch_match.group(0) if batch_match else None
+            params = {"min_courses": course_minimum, "limit": 200, "offset": 0}
+            if batch:
+                params["batch"] = batch
+            plan.append("查询课程报名明细，按学员统计不同课程数并筛选达到门数要求的人")
+            stats = run(
+                "bi_list_course_enrollments",
+                lambda: M.bi_list_course_enrollments(
+                    batch=batch, min_courses=course_minimum, limit=200
+                ),
+                params,
+                "课程明细数据支持按学员去重并统计不同课程数",
+                lambda result: (
+                    f"{result.get('batch')} 批次有 {result.get('qualifying_learners', 0)} "
+                    f"位学员报名至少 {course_minimum} 门不同课程"
+                ),
+            )
+            error = (stats or {}).get("error")
+            if error:
+                answer = f"无法查询课程报名明细：{error}"
+            else:
+                names = (stats or {}).get("learners", [])[:30]
+                if stats.get("qualifying_learners", 0):
+                    lines = [
+                        f"【课程报名统计】{stats['batch']} 批次共有 {stats['learner_count']} 位学员；"
+                        f"报名至少 {course_minimum} 门不同课程的学员有 "
+                        f"{stats['qualifying_learners']} 人。课程名称按不同课程去重，"
+                        "同一课程不同月份的明细不会重复计数。"
+                    ]
+                    if names:
+                        lines.append("名单（最多显示前 30 人）：")
+                        lines.extend(
+                            f"  · {learner['name'] or '未填写'}：{learner['course_count']} 门"
+                            f"（{'、'.join(learner['courses'])}）"
+                            for learner in names
+                        )
+                    if stats["qualifying_learners"] > stats["returned"]:
+                        lines.append(
+                            f"本次返回 {stats['returned']} 人；剩余名单可通过分页继续查询。"
+                        )
+                    elif stats["returned"] > len(names):
+                        lines.append("完整的当前页名单见本次查询步骤中的返回数据。")
+                    answer = "\n".join(lines)
+                else:
+                    answer = (
+                        f"【课程报名统计】{stats['batch']} 批次共 {stats['learner_count']} 位学员，"
+                        f"没有学员报名达到 {course_minimum} 门不同课程。"
+                    )
+            return {
+                "question": question,
+                "intent": intent,
+                "goal": goal_dict,
+                "from": None,
+                "to": stats.get("batch") if stats and not error else batch,
+                "plan": plan,
+                "steps": [step.as_dict() for step in steps],
+                "step_count": len(steps),
+                "course_enrollments": stats if not error else None,
+                "answer": answer,
+                "error": error,
+                "used_llm": False,
+                "elapsed_ms": int((time.perf_counter() - t_start) * 1000),
+            }
 
         # ---- 1. 批次 ----
         plan.append("列出所有已入站批次，确定可对比的时间范围")

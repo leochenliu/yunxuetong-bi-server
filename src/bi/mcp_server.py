@@ -133,6 +133,44 @@ def bi_list_batches() -> dict[str, Any]:
         return {"error": str(e)}
 
 
+def bi_list_course_enrollments(
+    batch: str | None = None,
+    min_courses: int = 2,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """查询至少报名指定门数不同课程的学员、课程名单及人数。"""
+    t0 = time.perf_counter()
+    params: dict[str, Any] = {
+        "batch": batch,
+        "min_courses": min_courses,
+        "limit": limit,
+        "offset": offset,
+    }
+    try:
+        eff, truncated, maxl = _clamp_limit(limit)
+        if batch is not None:
+            _check_batch(batch)
+        if min_courses < 1:
+            raise ValueError("min_courses 必须 >= 1")
+        if offset < 0:
+            raise ValueError("offset 必须 >= 0")
+        params = {
+            "min_courses": min_courses,
+            "limit": eff,
+            "offset": offset,
+            **({"batch": batch} if batch else {}),
+        }
+        out = _client().get("/courses/enrollments", params)
+        out["truncated"] = truncated
+        out["server_max_limit"] = maxl
+        _audit("bi_list_course_enrollments", params, out.get("returned"), t0)
+        return out
+    except Exception as e:
+        _audit("bi_list_course_enrollments", params, None, t0, "error", str(e))
+        return {"error": str(e)}
+
+
 def bi_compare_metrics(from_batch: str, to_batch: str,
                        include_attribution: bool = True) -> dict[str, Any]:
     """对比两个批次的核心指标：数值、变化量、变化率，并给出每个指标「为什么变」的归因。
@@ -246,6 +284,7 @@ def bi_list_anomalies(batch: str, severity: str | None = None, limit: int = 50) 
 
 TOOLS = (
     bi_list_batches,
+    bi_list_course_enrollments,
     bi_compare_metrics,
     bi_diff_summary,
     bi_diff_records,
@@ -270,6 +309,7 @@ INSTRUCTIONS = """云学通 BI 差分服务（只读）。
 
 能力范围：
   - 列出批次
+  - 查询至少报名指定门数不同课程的学员名单和人数
   - 对比两期核心指标并解释变化原因（归因到具体差分事件）
   - 汇总两期差分（新增/移除/变更）
   - 下钻到具体人与字段

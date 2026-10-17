@@ -42,7 +42,7 @@
         │
         │ ④ 只读包装（限额 + 白名单 + 审计）
         ▼
-   FastMCP  6 个只读工具
+   FastMCP  7 个只读工具
         │
         │ ⑤ 自然语言
         ▼
@@ -263,6 +263,7 @@ docker run --name yunxuetong-bi-server `
 | `GET /metrics/compare?from=&to=` | 指标对比 + 变化归因（`residual` / `fully_explained`） |
 | `GET /diffs/summary?from=&to=` | 差分汇总（按类型 / 字段 / 严重度） |
 | `GET /diffs/records?from=&to=&event_type=&field_name=&record_key=&limit=&offset=` | 明细下钻 |
+| `GET /courses/enrollments?batch=&min_courses=&limit=&offset=` | 按不同课程数统计学员并返回名单；省略批次时查询最新课程明细批次 |
 | `GET /evidence/{event_id}` | 证据追溯：上下两期原始记录 + 源文件 + sha256 + **Excel 物理行号** |
 | `GET /anomalies?batch=` | 异常清单 |
 | `POST /agent/ask` | 自然语言闭环 |
@@ -274,9 +275,9 @@ docker run --name yunxuetong-bi-server `
 
 ## 七、MCP 工具与约束
 
-6 个工具，**全部只读**（`assert_readonly()` 会自检工具名不含写关键词）：
+7 个工具，**全部只读**（`assert_readonly()` 会自检工具名不含写关键词）：
 
-`bi_list_batches` · `bi_compare_metrics` · `bi_diff_summary` · `bi_diff_records` ·
+`bi_list_batches` · `bi_list_course_enrollments` · `bi_compare_metrics` · `bi_diff_summary` · `bi_diff_records` ·
 `bi_trace_evidence` · `bi_list_anomalies`
 
 - **只读**：不存在任何写工具；MCP 不直接读库，而是调用第三阶段那套**已被 pytest 覆盖的 HTTP API**，

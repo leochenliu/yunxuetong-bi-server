@@ -468,6 +468,59 @@ class FactStore:
             result.append(d)
         return result
 
+    def course_enrollment_stats(
+        self,
+        batch: str | None = None,
+        min_courses: int = 2,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """按不同课程数统计学员；姓名+证件摘要用于内部对齐，不向调用方返回证件信息。"""
+        versions = self.list_versions("course_monthly_summary")
+        if batch is None:
+            version = max(versions, key=lambda row: row["batch"]) if versions else None
+        else:
+            version = next((row for row in versions if row["batch"] == batch), None)
+        if version is None:
+            raise LookupError(f"课程报名明细批次不存在: {batch or 'latest'}")
+
+        with self.connect() as conn:
+            rows = conn.execute(
+                """SELECT r.id_number_hash, r.name, r.payload_json
+                   FROM raw_records r
+                   JOIN upload_versions v ON v.id=r.version_id
+                   WHERE v.dataset_id=? AND v.batch=?
+                   ORDER BY r.id""",
+                ("course_monthly_summary", version["batch"]),
+            ).fetchall()
+
+        learners: dict[tuple[str, str], set[str]] = {}
+        for row in rows:
+            payload = json.loads(row["payload_json"])
+            course = str(payload.get("课程") or "").strip()
+            if not course:
+                continue
+            identity = (str(row["id_number_hash"] or ""), str(row["name"] or ""))
+            learners.setdefault(identity, set()).add(course)
+
+        qualifying = [
+            {"name": name, "course_count": len(courses), "courses": sorted(courses)}
+            for (_, name), courses in learners.items()
+            if len(courses) >= min_courses
+        ]
+        qualifying.sort(key=lambda learner: (-learner["course_count"], learner["name"], learner["courses"]))
+        return {
+            "dataset_id": "course_monthly_summary",
+            "batch": version["batch"],
+            "min_courses": min_courses,
+            "learner_count": len(learners),
+            "qualifying_learners": len(qualifying),
+            "limit": limit,
+            "offset": offset,
+            "returned": len(qualifying[offset:offset + limit]),
+            "learners": qualifying[offset:offset + limit],
+        }
+
     def metric_snapshot(self, batch: str) -> dict[str, dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute(
