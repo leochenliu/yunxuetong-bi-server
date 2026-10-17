@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>云学通 · 业务好坏的四个真相</title>
+<style>
+  :root{
+    --bg:#f6f7fb; --card:#ffffff; --line:rgba(0,0,0,.10);
+    --ink:#111827; --ink-2:#5b6478; --ink-3:#8b93a7;
+    --red:#dc2626; --red-soft:#fef2f2; --red-line:#fecaca;
+    --green:#16a34a; --green-soft:#f0fdf4; --green-line:#bbf7d0;
+    --amber:#d97706; --amber-soft:#fff7ed; --amber-line:#fbbf24;
+    --indigo:#4f46e5; --indigo-soft:#eef0ff; --indigo-line:#c7c3ff;
+    --gray:#6b7280; --gray-soft:#f3f4f6; --gray-line:#e5e7eb;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+    font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1200px;margin:0 auto;padding:32px 24px 80px}
+
+  /* ========== HERO ========== */
+  .hero{margin-bottom:40px}
+  .hero h1{font-size:24px;font-weight:600;margin:0 0 6px;letter-spacing:-.01em}
+  .hero .sub{color:var(--ink-2);font-size:14px}
+  .hero .meta{margin-top:10px;font-size:12px;color:var(--ink-3);
+    display:flex;gap:14px;flex-wrap:wrap}
+  .hero .meta b{color:var(--ink-2);font-weight:500}
+
+  /* ========== PAIN POINT GRID ========== */
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:36px}
+  .pain{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:18px 20px;min-height:120px;display:flex;flex-direction:column;justify-content:space-between}
+  .pain .tag{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+  .pain .bignum{font-size:32px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.1;margin-top:4px}
+  .pain .desc{font-size:12.5px;color:var(--ink-2);margin-top:6px}
+  .pain.red .bignum{color:var(--red)}
+  .pain.green .bignum{color:var(--green)}
+  .pain.amber .bignum{color:var(--amber)}
+  .pain.indigo .bignum{color:var(--indigo)}
+  .pain.gray .bignum{color:var(--gray)}
+
+  /* ========== SECTION ========== */
+  section{margin-bottom:48px}
+  .sec-hd{display:flex;align-items:baseline;gap:14px;margin-bottom:14px}
+  .sec-num{font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--ink-3)}
+  .sec-title{font-size:18px;font-weight:600;letter-spacing:-.01em}
+  .sec-tag{font-size:11.5px;color:var(--ink-3);padding:2px 9px;border-radius:999px;background:var(--gray-soft);border:1px solid var(--gray-line)}
+  .sec-tag.red{background:var(--red-soft);border-color:var(--red-line);color:var(--red)}
+  .sec-tag.amber{background:var(--amber-soft);border-color:var(--amber-line);color:var(--amber)}
+  .sec-tag.green{background:var(--green-soft);border-color:var(--green-line);color:var(--green)}
+
+  .sec-body{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 24px}
+
+  /* ========== 痛点 1：续费漏斗 ========== */
+  .funnel-row{display:flex;gap:8px;align-items:stretch;margin-top:10px}
+  .funnel-step{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:18px 8px;border-radius:10px;background:var(--gray-soft);position:relative;min-height:100px}
+  .funnel-step.renewed{background:var(--green-soft);border:1px solid var(--green-line)}
+  .funnel-step.lost{background:var(--red-soft);border:1px solid var(--red-line)}
+  .funnel-step .label{font-size:11.5px;color:var(--ink-3);margin-bottom:4px}
+  .funnel-step .num{font-size:26px;font-weight:600;letter-spacing:-.01em;font-variant-numeric:tabular-nums;line-height:1}
+  .funnel-step.renewed .num{color:var(--green)}
+  .funnel-step.lost .num{color:var(--red)}
+  .funnel-step .sub{font-size:11px;color:var(--ink-3);margin-top:6px}
+  .funnel-arrow{position:absolute;right:-10px;top:50%;transform:translateY(-50%);
+    width:0;height:0;border-top:8px solid transparent;border-bottom:8px solid transparent;border-left:8px solid var(--ink-3);z-index:2}
+  .funnel-empty{padding:40px;text-align:center;color:var(--ink-3);font-size:14px}
+  .funnel-empty b{color:var(--ink-2);font-weight:600;display:block;margin-bottom:6px}
+
+  /* ========== 痛点 2：风险甜甜圈 + 名单 ========== */
+  .risk-grid{display:grid;grid-template-columns:1fr 1.2fr;gap:24px;align-items:center}
+  .donut-wrap{display:flex;align-items:center;justify-content:center;position:relative;height:240px}
+  .donut-center{position:absolute;text-align:center}
+  .donut-center .total{font-size:32px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1}
+  .donut-center .lbl{font-size:11.5px;color:var(--ink-3);margin-top:2px}
+  .donut-legend{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+  .donut-legend .row{display:flex;align-items:center;justify-content:space-between;font-size:13px;padding:6px 10px;border-radius:6px}
+  .donut-legend .left{display:flex;align-items:center;gap:8px}
+  .donut-legend .dot{width:10px;height:10px;border-radius:3px}
+  .donut-legend .count{font-weight:600;font-variant-numeric:tabular-nums}
+  .risk-list{background:var(--gray-soft);border-radius:10px;padding:14px 16px;max-height:340px;overflow:auto}
+  .risk-list h4{margin:0 0 10px;font-size:13px;font-weight:600}
+  .risk-list .row{padding:8px 0;border-top:1px solid var(--line)}
+  .risk-list .row:first-of-type{border-top:none}
+  .risk-list .name{font-weight:600;font-size:13.5px}
+  .risk-list .name .id{font-weight:400;color:var(--ink-3);font-size:11.5px;margin-left:6px}
+  .risk-list .meta{font-size:12px;color:var(--ink-2);margin-top:2px}
+  .risk-list .meta .warn{color:var(--red);font-weight:600}
+  .risk-list .empty{color:var(--ink-3);font-size:13px;text-align:center;padding:20px 0}
+
+  /* ========== 痛点 3：老师排名（横向条形图） ========== */
+  .bar-list{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+  .bar-row{display:grid;grid-template-columns:80px 1fr 90px;align-items:center;gap:10px;
+    padding:8px 10px;border-radius:8px;background:var(--gray-soft);font-size:12.5px}
+  .bar-row.high{background:var(--red-soft);border:1px solid var(--red-line)}
+  .bar-row.warn{background:var(--amber-soft);border:1px solid var(--amber-line)}
+  .bar-row .name{font-weight:600}
+  .bar-row .barbg{height:18px;background:#fff;border-radius:4px;overflow:hidden;position:relative;border:1px solid var(--line)}
+  .bar-row .barfill{height:100%;background:var(--indigo);border-radius:3px}
+  .bar-row.high .barfill{background:var(--red)}
+  .bar-row .stat{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink-2)}
+  .bar-row .stat b{color:var(--ink);font-weight:600}
+  .legend{display:flex;gap:18px;margin-top:14px;font-size:12px;color:var(--ink-2);flex-wrap:wrap}
+
+  /* ========== 痛点 4：5 级漏斗 ========== */
+  .leak-list{display:flex;flex-direction:column;gap:4px;margin-top:14px}
+  .leak-row{display:grid;grid-template-columns:80px 1fr 60px 70px;gap:10px;align-items:center;
+    padding:8px 10px;font-size:12.5px}
+  .leak-row .from{color:var(--ink-2)}
+  .leak-row .to{color:var(--ink)}
+  .leak-row .barbg{height:10px;background:var(--gray-soft);border-radius:5px;overflow:hidden}
+  .leak-row .barfill{height:100%;background:var(--amber);border-radius:5px}
+  .leak-row.high .barfill{background:var(--red)}
+  .leak-row .lost{text-align:right;font-variant-numeric:tabular-nums;font-weight:600;color:var(--red)}
+  .leak-row .rate{text-align:right;font-size:11.5px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+  .bottleneck{background:var(--red-soft);border:1px solid var(--red-line);border-radius:10px;
+    padding:14px 18px;margin-top:18px;font-size:13.5px;color:var(--red)}
+  .bottleneck b{font-weight:600}
+
+  /* ========== NOTE / FOOTER ========== */
+  .note{background:var(--gray-soft);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--ink-2);
+    margin-top:14px;line-height:1.7}
+  .note b{font-weight:600;color:var(--ink)}
+
+  footer{margin-top:60px;text-align:center;color:var(--ink-3);font-size:12px;
+    padding-top:24px;border-top:1px solid var(--line)}
+  footer a{color:var(--indigo);text-decoration:none;margin:0 8px}
+
+  /* SVG 文本 */
+  text{font-family:inherit}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ========== HERO ========== -->
+  <div class="hero">
+    <h1>业务好坏的四个真相</h1>
+    <div class="sub">续费率 · 进度风险 · 项目经理强度 · 已签未买单</div>
+    <div class="meta">
+      <span>数据批次：<b id="m-batch">—</b></span>
+      <span>统计时间：<b id="m-today">—</b></span>
+      <span>口径：<b>20261012 → 20261013</b></span>
+    </div>
+  </div>
+
+  <!-- ========== 顶部 4 张大卡 ========== -->
+  <div class="grid4">
+    <div class="pain indigo" id="kpi-1">
+      <div class="tag">痛点 1 · 续费</div>
+      <div>
+        <div class="bignum">—</div>
+        <div class="desc">理论到期人数</div>
+      </div>
+    </div>
+    <div class="pain red" id="kpi-2">
+      <div class="tag">痛点 2 · 进度</div>
+      <div>
+        <div class="bignum">—</div>
+        <div class="desc">高风险 + 失联人数</div>
+      </div>
+    </div>
+    <div class="pain amber" id="kpi-3">
+      <div class="tag">痛点 3 · 项目经理</div>
+      <div>
+        <div class="bignum">—</div>
+        <div class="desc">过载老师数</div>
+      </div>
+    </div>
+    <div class="pain amber" id="kpi-4">
+      <div class="tag">痛点 4 · 已签未买单</div>
+      <div>
+        <div class="bignum">—</div>
+        <div class="desc">最大漏斗节点流失率</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 痛点 1：续费 ========== -->
+  <section>
+    <div class="sec-hd">
+      <span class="sec-num">01</span>
+      <span class="sec-title">资格证到期后的续费情况</span>
+      <span class="sec-tag">3 年有效期代理</span>
+    </div>
+    <div class="sec-body">
+      <div class="funnel-row" id="funnel-1"></div>
+      <div class="note">
+        <b>口径：</b>理论到期日 = 首次开班日期 + 3 年（原 Excel 无「取证日期/证书编号」字段，本结果为代理）。
+        <b>当前数据：</b>D1 所有人开班都在近一年，到期数 = 0 是预期。系统就位，3 年后即可算。
+        <b>为什么没续</b> 将按 4 类分布展示（培训中 / 退费取消 / 失联未启动 / 可结算其他）。
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== 痛点 2：进度风险 ========== -->
+  <section>
+    <div class="sec-hd">
+      <span class="sec-num">02</span>
+      <span class="sec-title">目前在学的学生是否能跟上</span>
+      <span class="sec-tag red" id="risk-total">— 人</span>
+    </div>
+    <div class="sec-body">
+      <div class="risk-grid">
+        <div>
+          <div class="donut-wrap">
+            <svg id="donut" viewBox="0 0 200 200" width="240" height="240">
+              <circle cx="100" cy="100" r="80" fill="none" stroke="#e5e7eb" stroke-width="32"/>
+            </svg>
+            <div class="donut-center">
+              <div class="total" id="risk-pct">—</div>
+              <div class="lbl">在读学员</div>
+            </div>
+          </div>
+          <div class="donut-legend" id="risk-legend"></div>
+        </div>
+        <div class="risk-list" id="risk-lists"></div>
+      </div>
+      <div class="note" id="risk-rule"></div>
+    </div>
+  </section>
+
+  <!-- ========== 痛点 3：项目经理 ========== -->
+  <section>
+    <div class="sec-hd">
+      <span class="sec-num">03</span>
+      <span class="sec-title">项目经理工作强度</span>
+      <span class="sec-tag amber" id="overload-tag">过载阈值 —</span>
+    </div>
+    <div class="sec-body">
+      <div class="bar-list" id="bar-teachers"></div>
+      <div class="legend">
+        <span>条长 = 管理学员数</span>
+        <span>红色 = 过载（&gt; 中位数 × 2）</span>
+        <span>(未指派) = 业务隐患</span>
+      </div>
+      <div class="note" id="teacher-note"></div>
+    </div>
+  </section>
+
+  <!-- ========== 痛点 4：漏斗 ========== -->
+  <section>
+    <div class="sec-hd">
+      <span class="sec-num">04</span>
+      <span class="sec-title">已签未买单：每个环节的流失</span>
+      <span class="sec-tag" id="funnel-total">— 报名</span>
+    </div>
+    <div class="sec-body">
+      <div class="leak-list" id="leak-list"></div>
+      <div class="bottleneck" id="bottleneck"></div>
+      <div class="note">
+        <b>数据范围：</b>原 Excel 仅为「已签约客户」数据。<b>真正的「潜在客户池」（未咨询 / 咨询未签）需 CRM 接入</b>，
+        当前无法回答「为什么没买单」。
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <a href="/">回到对话页</a>·
+    <a href="/docs" target="_blank">API 文档</a>·
+    <a href="javascript:location.reload()">刷新数据</a>
+    <div style="margin-top:8px">数据来源 /insights/data · 4 个痛点同时呈现</div>
+  </footer>
+
+</div>
+
+<script>
+// ==================== 工具 ====================
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const num = (v) => (v == null ? "—" : Number(v).toLocaleString("zh-CN"));
+const pct = (v, d = 1) => (v == null ? "—" : `${Number(v).toFixed(d)}%`);
+
+// ==================== 加载 + 渲染 ====================
+async function load() {
+  let data;
+  try { data = await (await fetch("/insights/data")).json(); }
+  catch (e) { document.body.innerHTML = `<div class="wrap"><h1>加载失败：${esc(e.message)}</h1></div>`; return; }
+  renderHero(data);
+  renderKPI(data);
+  renderRenewal(data.renewal);
+  renderRisk(data.progress);
+  renderTeachers(data.teachers);
+  renderFunnel(data.funnel);
+}
+
+function renderHero(d) {
+  $ = (id) => document.getElementById(id);
+  $("m-batch").textContent = d.batch || "—";
+  $("m-today").textContent = d.today || "—";
+}
+
+function renderKPI(d) {
+  $("kpi-1").querySelector(".bignum").textContent = d.renewal.due_count || 0;
+  $("kpi-1").querySelector(".desc").textContent = "理论到期人数";
+
+  const p = d.progress.buckets;
+  const riskCount = (p["高风险"] || 0) + (p["失联"] || 0);
+  $("kpi-2").querySelector(".bignum").textContent = riskCount;
+  $("kpi-2").querySelector(".desc").textContent =
+    `高风险 ${p["高风险"] || 0} + 失联 ${p["失联"] || 0}`;
+
+  $("kpi-3").querySelector(".bignum").textContent = d.teachers.overloaded.length;
+  $("kpi-3").querySelector(".desc").textContent = `过载老师数（阈值 ${d.teachers.threshold} 人）`;
+
+  const bn = d.funnel.bottleneck;
+  $("kpi-4").querySelector(".bignum").textContent = bn ? pct(bn.rate) : "—";
+  $("kpi-4").querySelector(".desc").textContent = bn ? `${bn.from} → ${bn.to}` : "暂无数据";
+}
+
+// ========== 痛点 1：续费漏斗 ==========
+function renderRenewal(r) {
+  const wrap = $("funnel-1");
+  if (r.due_count === 0) {
+    wrap.innerHTML = `<div class="funnel-empty">
+      <b>理论到期 = 0 人</b>
+      当前 D1 数据开班日期都在近一年内，3 年期尚未到达。
+      <br>系统已就位 · 3 年后自动产出真实续费率
+    </div>`;
+    return;
+  }
+  const stages = [
+    {label: "理论到期", count: r.due_count, cls: ""},
+    {label: "已续费", count: r.renewed, cls: "renewed"},
+  ];
+  for (const m of r.not_renewed_modes) {
+    stages.push({label: m.mode, count: m.count, cls: "lost"});
+  }
+  wrap.innerHTML = stages.map((s, i) => `
+    <div class="funnel-step ${s.cls}">
+      <div class="label">${esc(s.label)}</div>
+      <div class="num">${num(s.count)}</div>
+      <div class="sub">${i === 0 ? "基线" : (s.count / r.due_count * 100).toFixed(1) + "%"}</div>
+    </div>
+  `).join('<div class="funnel-arrow"></div>');
+}
+
+// ========== 痛点 2：进度风险（甜甜圈 + 名单）============
+function renderRisk(p) {
+  $("risk-total").textContent = `${p.total} 在读`;
+  const total = p.total || 1;
+  const buckets = [
+    {key: "正常", color: "#16a34a"},
+    {key: "落后", color: "#d97706"},
+    {key: "高风险", color: "#dc2626"},
+    {key: "失联", color: "#6b7280"},
+  ];
+  // 甜甜圈：单条圆环，按比例画弧
+  const cx = 100, cy = 100, r = 80, w = 32;
+  const C = 2 * Math.PI * r;
+  let offset = 0;
+  const svg = $("donut");
+  // 清掉除底色圆之外的所有元素
+  [...svg.querySelectorAll("circle:not(:first-of-type)")].forEach(c => c.remove());
+  for (const b of buckets) {
+    const count = p.buckets[b.key] || 0;
+    if (count === 0) continue;
+    const len = (count / total) * C;
+    const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    c.setAttribute("cx", cx); c.setAttribute("cy", cy); c.setAttribute("r", r);
+    c.setAttribute("fill", "none"); c.setAttribute("stroke", b.color);
+    c.setAttribute("stroke-width", w);
+    c.setAttribute("stroke-dasharray", `${len} ${C - len}`);
+    c.setAttribute("stroke-dashoffset", -offset);
+    c.setAttribute("transform", `rotate(-90 ${cx} ${cy})`);
+    svg.appendChild(c);
+    offset += len;
+  }
+  // 中心数字：总人数
+  $("risk-pct").textContent = p.total;
+  // 图例
+  $("risk-legend").innerHTML = buckets.map(b => {
+    const c = p.buckets[b.key] || 0;
+    return `<div class="row">
+      <div class="left"><span class="dot" style="background:${b.color}"></span>${esc(b.key)}</div>
+      <div><span class="count">${num(c)}</span> <span style="color:var(--ink-3)">(${pct(c / total * 100)})</span></div>
+    </div>`;
+  }).join("");
+  // 名单
+  const lists = $("risk-lists");
+  lists.innerHTML = `
+    <h4>高风险 (${p.high_risk.length})</h4>
+    ${p.high_risk.length === 0 ? '<div class="empty">暂无</div>' :
+      p.high_risk.map(r => `<div class="row">
+        <div class="name">${esc(r.name)}<span class="id">${esc(r.id_masked || '')}</span></div>
+        <div class="meta">${esc(r.employer || '')} · ${esc(r.subject || '')} · 培训 <b class="warn">${r.days_since_training}</b> 天未考</div>
+      </div>`).join("")}
+    <h4 style="margin-top:14px">失联 (${p.lost.length})</h4>
+    ${p.lost.length === 0 ? '<div class="empty">暂无</div>' :
+      p.lost.slice(0, 8).map(r => `<div class="row">
+        <div class="name">${esc(r.name)}<span class="id">${esc(r.id_masked || '')}</span></div>
+        <div class="meta">${esc(r.employer || '')} · ${esc(r.subject || '')} · 上次开班 ${esc(r.last_class || '')}</div>
+      </div>`).join("")}
+  `;
+  $("risk-rule").innerHTML = `<b>判定规则：</b>${esc(p.rule_summary)}`;
+}
+
+// ========== 痛点 3：老师画像（横向条形图）============
+function renderTeachers(t) {
+  $("overload-tag").textContent = `过载阈值 ${t.threshold} 人`;
+  const max = Math.max(...t.teachers.map(s => s.n_total)) || 1;
+  const top = t.teachers.slice(0, 12);
+  $("bar-teachers").innerHTML = top.map(s => {
+    const isHigh = t.overloaded.some(o => o.teacher === s.teacher);
+    const isUnassigned = s.teacher === "(未指派)";
+    const w = (s.n_total / max) * 100;
+    return `<div class="bar-row ${isHigh ? "high" : (isUnassigned ? "warn" : "")}">
+      <div class="name">${esc(s.teacher)}</div>
+      <div class="barbg"><div class="barfill" style="width:${w}%"></div></div>
+      <div class="stat"><b>${s.n_total}</b> 人 · ${s.n_class} 班 · 通过 ${s.n_passed}</div>
+    </div>`;
+  }).join("");
+  const unassignedN = t.unassigned?.n_total || 0;
+  const overloadedN = t.overloaded.length;
+  $("teacher-note").innerHTML = unassignedN > 0
+    ? `<b>关键发现：</b>${esc(t.note)}。<b>${unassignedN} 人未指派老师</b>（占比 ${(unassignedN / t.teachers.reduce((s,x)=>s+x.n_total,0) * 100).toFixed(1)}%）—— <span style="color:var(--red);font-weight:600">比"老师过载"更紧急的隐患</span>`
+    : `<b>${esc(t.note)}</b>`;
+}
+
+// ========== 痛点 4：5 级漏斗 ==========
+function renderFunnel(f) {
+  $("funnel-total").textContent = `${f.stages[0].count} 报名`;
+  $("leak-list").innerHTML = f.leakage.map(l => {
+    const isBottleneck = f.bottleneck && l.from === f.bottleneck.from && l.to === f.bottleneck.to;
+    return `<div class="leak-row ${isBottleneck ? "high" : ""}">
+      <div class="from">${esc(l.from)}</div>
+      <div class="barbg"><div class="barfill" style="width:${l.rate || 0}%"></div></div>
+      <div class="lost">−${num(l.lost)}</div>
+      <div class="rate">→ ${esc(l.to)} · ${pct(l.rate)}</div>
+    </div>`;
+  }).join("");
+  const bn = f.bottleneck;
+  $("bottleneck").innerHTML = bn
+    ? `<b>最大流失：</b>${esc(bn.from)} → ${esc(bn.to)}，流失 <b>${bn.lost}</b> 人（${pct(bn.rate)}）。这是当前最大的运营风险。`
+    : "数据不足。";
+}
+
+load();
+</script>
+</body>
+</html>
