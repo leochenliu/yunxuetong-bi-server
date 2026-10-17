@@ -1,0 +1,7 @@
+metrics:
+  - key: record_count
+    name: 名单记录数
+    agg: count_rows
+    unit: 条
+    decimals: 0
+    desc: 有证件号码的名单记录数

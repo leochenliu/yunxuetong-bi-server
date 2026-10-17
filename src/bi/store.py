@@ -270,6 +270,7 @@ class FactStore:
             from .values import canon_value, display_value
 
             rows_payload = []
+            pii_columns = {id_col, *cfg.pii_columns}
             for row in ds.rows:
                 parts = ingested_key(row, cfg)
                 id_number = str(row.get(id_col) or "").strip()
@@ -277,7 +278,7 @@ class FactStore:
                 for k, v in row.items():
                     if k == ROW_NUMBER_KEY:
                         continue
-                    if k in (id_col, "联系电话"):
+                    if k in pii_columns:
                         payload[k] = mask_id_number(str(v)) if v else ""
                     else:
                         payload[k] = display_value(v)
@@ -574,6 +575,6 @@ def ingested_key(row: dict[str, Any], cfg) -> str:
     from .values import canon_key
 
     parts = [canon_key(row.get(c)) for c in cfg.key_columns]
-    id_number = parts[0] if parts else ""
-    name = parts[1] if len(parts) > 1 else ""
+    id_number = canon_key(row.get(cfg.id_column))
+    name = canon_key(row.get(cfg.name_column))
     return cfg.identity.separator.join(p for p in parts if p) if name else id_number

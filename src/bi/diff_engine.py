@@ -39,8 +39,8 @@ class RecordKeyParts:
 def make_record_key(row: dict[str, Any], cfg: DatasetConfig) -> RecordKeyParts:
     cols = cfg.key_columns
     parts = [canon_key(row.get(c)) for c in cols]
-    id_number = parts[0] if parts else ""
-    name = parts[1] if len(parts) > 1 else ""
+    id_number = canon_key(row.get(cfg.id_column))
+    name = canon_key(row.get(cfg.name_column))
     key = cfg.identity.separator.join(p for p in parts if p != "") if name else id_number
     return RecordKeyParts(id_number=id_number, name=name, key=key)
 

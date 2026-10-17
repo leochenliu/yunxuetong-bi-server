@@ -26,11 +26,6 @@
     display:grid;place-items:center;color:#fff;font-weight:700;font-size:15px;letter-spacing:.5px}
   h1{font-size:18px;margin:0;font-weight:650;letter-spacing:-.01em}
   .sub{color:var(--ink-3);font-size:12.5px;margin-top:1px}
-  .badges{display:flex;gap:6px;flex-wrap:wrap}
-  .badge{font-size:11.5px;padding:4px 9px;border-radius:999px;border:1px solid var(--line);
-    background:#fff;color:var(--ink-2);white-space:nowrap}
-  .badge.on{background:var(--indigo-soft);border-color:#dcd9ff;color:#4338ca;font-weight:600}
-
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
   .pad{padding:16px 18px}
 
@@ -121,11 +116,6 @@
         <div class="sub">Excel 差分 · 事实存储 · 固定查询 API · MCP · 自然语言闭环</div>
       </div>
     </div>
-    <div class="badges">
-      <span class="badge on">只读</span>
-      <span class="badge" id="b-batches">批次 —</span>
-      <span class="badge" id="b-anom">异常 —</span>
-    </div>
   </header>
 
   <div class="card pad">
@@ -158,7 +148,7 @@
   <div id="placeholder" class="empty">输入问题后，这里会显示可核查的推导过程。</div>
 
   <footer>
-    <a href="/docs" target="_blank">API 文档</a> · <a href="/health" target="_blank">健康检查</a>
+    <a href="/dashboard">业务驾驶舱</a> · <a href="/docs" target="_blank">API 文档</a> · <a href="/health" target="_blank">健康检查</a>
     · 所有结论均可追溯到原始 Excel 的具体行
   </footer>
 </div>
@@ -181,14 +171,6 @@ $("chips").innerHTML = EXAMPLES.map((q) => `<span class="chip">${esc(q)}</span>`
 $("chips").addEventListener("click", (e) => {
   if (e.target.classList.contains("chip")) { $("q").value = e.target.textContent; ask(); }
 });
-
-async function boot() {
-  try {
-    const h = await (await fetch("/health")).json();
-    $("b-batches").textContent = "批次 " + (h.batches || []).length + " 期";
-  } catch (_) { $("b-batches").textContent = "服务未就绪"; }
-}
-boot();
 
 async function ask() {
   const question = $("q").value.trim();
@@ -216,9 +198,6 @@ async function ask() {
 function render(d) {
   $("placeholder").style.display = "none";
   $("result").style.display = "block";
-
-  const anom = d.anomalies || {};
-  $("b-anom").textContent = "异常 " + (anom.total ?? "—") + " 条";
 
   // ---- 指标卡 ----
   $("kpis").innerHTML = (d.metrics || []).map((m) => {

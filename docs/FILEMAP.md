@@ -44,6 +44,7 @@ yunxuetong-bi-server/
 ├── tests/                       61 个测试，按阶段划分
 ├── scripts/acceptance.py        端到端验收 → docs/ACCEPTANCE.md
 ├── web/index.html               ⑤ 对话页（单文件）
+├── web/dashboard.html           业务运营驾驶舱（原生 SVG 图表）
 ├── docs/                        ACCEPTANCE.md / FILEMAP.md
 └── data/                        运行期数据（不入库）
     ├── inbound/<批次>/*.xlsx     原始 Excel（含 PII）
@@ -115,7 +116,8 @@ yunxuetong-bi-server/
 
 | 文件 | 作用 |
 |---|---|
-| `api.py` | 8 个只读端点 + 1 个 Agent 端点 + 首页。关键设计：`limit` 上限 500（超出返回 422）；每次调用写审计；`from` 是 Python 关键字故用 `alias`；同源托管 `web/index.html`，避免 CORS。 |
+| `api.py` | 只读查询端点 + Agent 端点 + 页面路由。关键设计：`limit` 上限 500（超出返回 422）；查询调用写审计；`from` 是 Python 关键字故用 `alias`；同源托管页面，避免 CORS。 |
+| `dashboard.py` | 从已入库的多个数据集生成仅含聚合值的驾驶舱响应；身份键仅在服务端用于去重，不将个人标识返回前端。 |
 | `attribution.py` | **本项目最有价值的一层**。把「指标涨了 4 人」拆成可核查的事件计数，并计算**残差**：`residual == 0` 表示已被差分事件完全解释；`!= 0` 表示存在未被追踪的变化，必须报「建议核查」。三种归因模式：差集型（报名总人数 = 新增 − 移除）、字段值型（已通过 / 已付款，含新增移除直接命中）、空值型（已安排考试，含字段填入/清空 + 移除者原本含值）；均值型（平均分）只能给升降分布故标记不可计数归因。 |
 
 ### 4.6 阶段四 · MCP
@@ -154,6 +156,7 @@ yunxuetong-bi-server/
 |---|---|
 | `scripts/acceptance.py` | 端到端验收：一次跑完五阶段，打印人类可读报告并写入 `docs/ACCEPTANCE.md`。 |
 | `web/index.html` | 对话页（单文件、无外部依赖、浅色主题）。展示指标卡（含归因驱动项与「已完全解释」徽标）、结论、证据追溯（文件名/行号/掩码证件号/sha256）、可展开的执行轨迹。涨红跌绿符合国内习惯。 |
+| `web/dashboard.html` | 业务运营驾驶舱。以原生 SVG / CSS 呈现核心 KPI 与批次趋势、报名月份、考试状态与分数、缴费开票、课程月份热力图、人员画像及异常统计；通过 `/dashboard/data` 获取聚合数据。 |
 | `docs/ACCEPTANCE.md` | 由验收脚本生成的实测报告（含真实数字）。 |
 | `data/inbound/<批次>/(登高)总表.xlsx` | 原始数据。`20261012` 为真实数据，`20261013` 为派生数据。 |
 | `data/store/bi.sqlite3` | SQLite 事实库。 |
@@ -176,6 +179,7 @@ yunxuetong-bi-server/
 | 加 / 改业务关注点 | `config/goals.yaml`（声明）+ `src/bi/goal_actions.py`（专属逻辑） |
 | 换数据库 / 加表 | `src/bi/store.py` 的 `SCHEMA` |
 | 换前端样式 | `web/index.html` |
+| 改业务驾驶舱图表 | `web/dashboard.html`；聚合口径见 `src/bi/dashboard.py` |
 | 支持第二个培训项目 | 新增一份 `config/<项目>.yaml`，几乎无需改代码 |
 
 ---

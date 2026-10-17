@@ -18,6 +18,8 @@ class IdentityConfig:
     columns: list[str]
     separator: str = "|"
     require_identity: bool = True
+    id_column: str | None = None
+    name_column: str | None = None
 
 
 @dataclass
@@ -39,6 +41,7 @@ class DatasetConfig:
     name: str
     sheet: str | None
     identity: IdentityConfig
+    pii_columns: list[str]
     field_mapping: dict[str, str]
     tracked_fields: list[str]
     aux_tracked_fields: list[str]
@@ -55,11 +58,13 @@ class DatasetConfig:
 
     @property
     def id_column(self) -> str:
-        return self.identity.columns[0]
+        return self.identity.id_column or self.identity.columns[0]
 
     @property
     def name_column(self) -> str:
-        return self.identity.columns[-1] if len(self.identity.columns) > 1 else self.identity.columns[0]
+        return self.identity.name_column or (
+            self.identity.columns[-1] if len(self.identity.columns) > 1 else self.identity.columns[0]
+        )
 
     @property
     def normalization(self) -> dict[str, Any]:
@@ -197,7 +202,10 @@ def load_dataset_config(path: str | Path) -> DatasetConfig:
             columns=list(ident.get("columns", [])),
             separator=str(ident.get("separator", "|")),
             require_identity=bool(ident.get("require_identity", True)),
+            id_column=ident.get("id_column"),
+            name_column=ident.get("name_column"),
         ),
+        pii_columns=list(data.get("pii_columns", ["联系电话"]) or []),
         field_mapping=dict(data.get("field_mapping", {}) or {}),
         tracked_fields=list(data.get("tracked_fields", []) or []),
         aux_tracked_fields=list(data.get("aux_tracked_fields", []) or []),

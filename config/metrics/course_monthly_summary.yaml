@@ -1,0 +1,7 @@
+metrics:
+  - key: record_count
+    name: 汇总明细行数
+    agg: count_rows
+    unit: 行
+    decimals: 0
+    desc: 有证件号码的课程月份汇总明细行数

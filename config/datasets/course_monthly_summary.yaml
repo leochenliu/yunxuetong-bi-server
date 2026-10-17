@@ -1,0 +1,33 @@
+dataset:
+  id: course_monthly_summary
+  name: 按课程月份汇总
+  sheet: 汇总
+
+identity:
+  columns: [证件号码, 姓名, 课程, 年份, 月份]
+  id_column: 证件号码
+  name_column: 姓名
+  separator: "|"
+  require_identity: true
+
+pii_columns: [手机]
+
+field_mapping:
+  姓名: name
+  证件号码: id_number
+  最高学历: highest_education
+  参加工作时间: started_work_at
+  工作单位: employer
+  职称等级: title_level
+  手机: phone
+  课程: course
+  年份: year
+  月份: month
+  缴费情况: payment_status
+
+tracked_fields: []
+aux_tracked_fields: []
+severity: {}
+derive: {}
+diff_rules: {}
+anomaly_rules: []

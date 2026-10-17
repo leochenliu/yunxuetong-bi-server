@@ -80,7 +80,11 @@ def test_pii_not_stored_in_plaintext(seeded, settings):
 
     store = FactStore(settings)
     with store.connect() as conn:
-        rec = conn.execute("SELECT * FROM raw_records LIMIT 1").fetchone()
+        rec = conn.execute(
+            """SELECT r.* FROM raw_records r
+               JOIN upload_versions v ON v.id=r.version_id
+               WHERE v.dataset_id='denggao' LIMIT 1"""
+        ).fetchone()
     assert rec["id_number_plain"] is None
     masked = rec["id_number_masked"]
     assert "*" in masked and len(masked) == 18

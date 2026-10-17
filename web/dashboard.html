@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f6fa">
+  <title>云学通 · 业务驾驶舱</title>
+  <style>
+    :root{
+      --bg:#f4f6fa;--surface:#fff;--line:#e7eaf0;--ink:#172033;--muted:#768198;
+      --soft:#f8f9fc;--navy:#18253f;--blue:#5578f6;--teal:#21a99a;
+      --orange:#e4a044;--red:#e56b70;--purple:#9078d8;--green:#4ea980;
+      --shadow:0 8px 24px rgba(32,47,79,.045)
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);
+      font:14px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+      -webkit-font-smoothing:antialiased}
+    a{color:inherit;text-decoration:none}
+    button{font:inherit}
+    .shell{max-width:1480px;margin:auto;padding:28px 34px 56px}
+    .topbar{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:26px}
+    .brand{display:flex;align-items:center;gap:13px}
+    .brand-mark{width:42px;height:42px;border-radius:14px;background:var(--navy);color:#fff;
+      display:grid;place-items:center;font-weight:800;letter-spacing:.04em}
+    .brand h1{font-size:19px;letter-spacing:-.03em;margin:0;font-weight:720}
+    .brand p{font-size:12px;color:var(--muted);margin:2px 0 0}
+    .nav{display:flex;align-items:center;gap:8px}
+    .nav a,.refresh{border:1px solid var(--line);background:var(--surface);border-radius:9px;
+      padding:8px 12px;color:#566178;font-size:12px}
+    .nav a.active{color:var(--blue);border-color:#dce3ff;background:#f7f8ff;font-weight:650}
+    .refresh{cursor:pointer}
+    .refresh:hover,.nav a:hover{border-color:#bfcaff;color:var(--blue)}
+    .intro{display:flex;justify-content:space-between;align-items:end;gap:20px;margin-bottom:19px}
+    .intro h2{font-size:25px;letter-spacing:-.04em;margin:0;font-weight:720}
+    .intro p{color:var(--muted);margin:5px 0 0;font-size:12.5px}
+    .period{font-size:12px;color:#4d5a73;text-align:right}
+    .period strong{color:var(--ink);font-size:13px}
+    .notice{display:none;background:#fff8ec;border:1px solid #f4dfba;color:#91631e;padding:11px 14px;
+      border-radius:10px;margin-bottom:17px;font-size:12px}
+    .notice.show{display:block}
+    .kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:13px;margin-bottom:18px}
+    .kpi,.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+    .kpi{padding:16px 17px 13px;min-height:143px;overflow:hidden;position:relative}
+    .kpi-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+    .kpi-label{font-size:12px;color:#69758a;font-weight:550}
+    .kpi-dot{width:8px;height:8px;border-radius:50%;background:var(--tone,var(--blue));box-shadow:0 0 0 4px color-mix(in srgb,var(--tone,var(--blue)) 12%,white)}
+    .kpi-value{font-size:28px;line-height:1.2;font-weight:740;letter-spacing:-.045em;
+      font-variant-numeric:tabular-nums;margin-top:12px}
+    .kpi-foot{display:flex;align-items:center;gap:6px;margin-top:5px;font-size:11px;color:var(--muted)}
+    .delta{font-weight:700}
+    .delta.up{color:var(--green)}.delta.down{color:var(--red)}.delta.flat{color:#8b94a5}
+    .spark{height:27px;margin-top:7px}
+    .grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:15px}
+    .panel{padding:17px 19px;min-width:0}
+    .span-12{grid-column:span 12}.span-8{grid-column:span 8}.span-7{grid-column:span 7}
+    .span-6{grid-column:span 6}.span-5{grid-column:span 5}.span-4{grid-column:span 4}
+    .panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:13px}
+    .panel-title{font-size:14px;margin:0;font-weight:680;letter-spacing:-.01em}
+    .panel-sub{font-size:11px;color:var(--muted);margin-top:3px}
+    .panel-kicker{font-size:10px;color:#8993a7;background:#f3f5f9;padding:4px 8px;border-radius:6px;white-space:nowrap}
+    .chart{width:100%;min-height:210px;position:relative}
+    .chart svg{width:100%;height:auto;display:block;overflow:visible}
+    .chart-empty{min-height:190px;display:grid;place-items:center;color:#98a1b1;font-size:12px}
+    .legend{display:flex;gap:13px;align-items:center;flex-wrap:wrap;font-size:10px;color:var(--muted);margin:2px 0 8px}
+    .legend span{display:inline-flex;align-items:center;gap:6px}
+    .legend i{width:8px;height:8px;border-radius:3px;background:var(--c)}
+    .stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:2px 0 14px}
+    .stat{padding:10px 11px;border-radius:9px;background:var(--soft)}
+    .stat-label{font-size:10px;color:var(--muted)}
+    .stat-value{font-size:17px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
+    .heat-wrap{overflow:auto}
+    table{border-collapse:separate;border-spacing:4px;width:100%;min-width:540px;font-size:10px}
+    th{font-weight:550;color:#8993a7;text-align:center;padding:5px}
+    th:first-child{text-align:left;min-width:150px}
+    td{height:30px;text-align:center;border-radius:5px;color:#26344f;font-variant-numeric:tabular-nums}
+    td:first-child{text-align:left;background:transparent!important;color:#59657b;padding:0 7px;font-size:10px}
+    .heat-note{font-size:10px;color:var(--muted);margin:10px 2px 0}
+    .status-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+    .status-card{padding:11px;border-radius:9px;background:var(--soft)}
+    .status-card b{font-size:18px}
+    .status-card div{font-size:10px;color:var(--muted)}
+    .section-label{font-size:10px;color:#9aa3b2;font-weight:650;letter-spacing:.11em;text-transform:uppercase;
+      margin:23px 2px 10px}
+    .section-label:first-child{margin-top:4px}
+    .loading,.error{margin:40px auto;text-align:center;color:var(--muted);font-size:13px}
+    .error{color:#b4232c}
+    footer{padding:28px 4px 0;text-align:center;color:#98a1b1;font-size:10px}
+    @media(max-width:1080px){
+      .shell{padding:22px 22px 44px}.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+      .span-8,.span-7{grid-column:span 7}.span-5,.span-4{grid-column:span 5}
+    }
+    @media(max-width:720px){
+      .shell{padding:17px 13px 36px}.topbar{align-items:flex-start;flex-direction:column}.brand h1{font-size:16px}
+      .brand p{max-width:210px}.nav{gap:5px}.nav a,.refresh{padding:7px 8px;font-size:10px}
+      .nav{width:100%;overflow-x:auto;padding-bottom:2px}
+      .nav a,.refresh{flex:0 0 auto;white-space:nowrap}
+      .intro{align-items:flex-start;flex-direction:column}.intro h2{font-size:22px}.period{text-align:left}
+      .kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.kpi{padding:13px;min-height:130px}
+      .kpi-value{font-size:24px}.grid{gap:10px}
+      .span-12,.span-8,.span-7,.span-6,.span-5,.span-4{grid-column:span 12}
+      .panel{padding:15px 13px}.chart{min-height:180px}
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="/dashboard">
+        <div class="brand-mark">YT</div>
+        <div><h1>云学通 · 业务驾驶舱</h1><p>培训运营、课程结构与数据质量</p></div>
+      </a>
+      <nav class="nav" aria-label="页面导航">
+        <a class="active" href="/dashboard">驾驶舱</a>
+        <a href="/insights">业务洞察</a>
+        <a href="/">智能问答</a>
+        <button class="refresh" id="refresh" type="button">刷新数据</button>
+      </nav>
+    </header>
+
+    <div id="loading" class="loading">正在汇总业务数据…</div>
+    <div id="error" class="error" hidden></div>
+    <div id="dashboard" hidden>
+      <section class="intro">
+        <div><h2>经营概览</h2><p>用真实批次数据追踪规模、进度、结果与风险</p></div>
+        <div class="period">登高培训 · 最新批次 <strong id="current-batch">—</strong><br>
+          <span id="record-meta">—</span></div>
+      </section>
+      <div class="notice" id="data-notice"></div>
+
+      <div class="kpis" id="kpis"></div>
+      <div class="grid">
+        <section class="panel span-7">
+          <div class="panel-head"><div><h3 class="panel-title">核心指标批次趋势</h3>
+            <div class="panel-sub">每张卡片独立刻度；演示批次使用虚线区分</div></div>
+            <span class="panel-kicker" id="trend-count">— 个批次</span></div>
+          <div id="trend-grid" class="kpis" style="grid-template-columns:repeat(2,minmax(0,1fr));margin:0"></div>
+        </section>
+        <section class="panel span-5">
+          <div class="panel-head"><div><h3 class="panel-title">报名人数月度趋势</h3>
+            <div class="panel-sub">按当前批次记录中的报名月份归组</div></div></div>
+          <div class="chart" id="enrollment-chart"></div>
+        </section>
+
+        <section class="panel span-6">
+          <div class="panel-head"><div><h3 class="panel-title">考试状态分布</h3>
+            <div class="panel-sub">当前批次人数，不将状态推断为阶段转化率</div></div>
+            <span class="panel-kicker" id="exam-total">— 人</span></div>
+          <div class="chart" id="exam-chart"></div>
+          <div class="section-label">考试日期记录</div>
+          <div class="chart" id="schedule-chart"></div>
+        </section>
+        <section class="panel span-6">
+          <div class="panel-head"><div><h3 class="panel-title">成绩区间分布</h3>
+            <div class="panel-sub">按 0–100 分区间；越界分数单独提示</div></div>
+            <span class="panel-kicker" id="score-count">— 有分数</span></div>
+          <div class="chart" id="score-chart"></div>
+        </section>
+
+        <section class="panel span-5">
+          <div class="panel-head"><div><h3 class="panel-title">缴费与开票状态</h3>
+            <div class="panel-sub">分布占当前批次记录数；金额为记录金额合计</div></div></div>
+          <div class="chart" id="payment-chart"></div>
+          <div class="section-label">发票状态</div>
+          <div class="chart" id="invoice-chart"></div>
+          <div class="status-cards" id="finance-stats"></div>
+          <div class="panel-sub" id="amount-note" style="margin-top:10px"></div>
+        </section>
+        <section class="panel span-7">
+          <div class="panel-head"><div><h3 class="panel-title">培训签到与补考情况</h3>
+            <div class="panel-sub">培训第一天、第二天签到状态和补考次数记录</div></div></div>
+          <div class="grid" style="gap:12px">
+            <div class="span-6"><div class="panel-sub">签到情况</div><div class="chart" id="attendance-chart"></div></div>
+            <div class="span-6"><div class="panel-sub">补考次数</div><div class="chart" id="retry-chart"></div></div>
+          </div>
+        </section>
+
+        <section class="panel span-12">
+          <div class="panel-head"><div><h3 class="panel-title">课程 × 月份明细热力图</h3>
+            <div class="panel-sub">选中较高明细量的课程；颜色深浅表示明细行数</div></div>
+            <span class="panel-kicker" id="course-batch">—</span></div>
+          <div class="stats-row" id="course-stats"></div>
+          <div class="heat-wrap" id="heatmap"></div>
+          <div class="heat-note">重要口径：明细行数表示课程月份人次记录；不同月份或课程间可能有同一学员，请勿相加后当作去重人数。</div>
+          <div class="section-label">课程月度明细缴费状态</div>
+          <div class="chart" id="monthly-payment-chart"></div>
+        </section>
+
+        <section class="panel span-6">
+          <div class="panel-head"><div><h3 class="panel-title">培训人员画像</h3>
+            <div class="panel-sub">按名单记录统计；课程多选会在多个课程中分别计数</div></div>
+            <span class="panel-kicker" id="roster-batch">—</span></div>
+          <div class="section-label">学历结构</div><div class="chart" id="education-chart"></div>
+          <div class="section-label">职称等级</div><div class="chart" id="title-chart"></div>
+          <div class="section-label">名单缴费状态</div><div class="chart" id="roster-payment-chart"></div>
+        </section>
+        <section class="panel span-6">
+          <div class="panel-head"><div><h3 class="panel-title">参训课程与单位</h3>
+            <div class="panel-sub">课程选择可重叠；单位展示 Top 10 名单聚合数</div></div></div>
+          <div class="section-label">课程选择人数</div><div class="chart" id="roster-course-chart"></div>
+          <div class="section-label">单位参训人数</div><div class="chart" id="employer-chart"></div>
+        </section>
+
+        <section class="panel span-7">
+          <div class="panel-head"><div><h3 class="panel-title">数据质量异常</h3>
+            <div class="panel-sub">按当前批次规则计数；异常明细仍通过现有证据查询</div></div>
+            <span class="panel-kicker" id="anomaly-total">— 项</span></div>
+          <div class="chart" id="anomaly-chart"></div>
+        </section>
+        <section class="panel span-5">
+          <div class="panel-head"><div><h3 class="panel-title">异常批次变化</h3>
+            <div class="panel-sub">当前数据集已落库批次</div></div></div>
+          <div class="chart" id="anomaly-trend"></div>
+        </section>
+      </div>
+    </div>
+    <footer>统计结果来自已入库批次；个人标识仅用于服务端去重，不向页面返回。</footer>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const COLORS = ["#5578f6","#21a99a","#e4a044","#9078d8","#e56b70","#4ea980","#7890b2","#c47a55"];
+    const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) =>
+      ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    const fmt = (value, digits = 0) => value == null ? "—"
+      : Number(value).toLocaleString("zh-CN",{minimumFractionDigits:digits,maximumFractionDigits:digits});
+    const empty = (message = "暂无可用数据") => `<div class="chart-empty">${esc(message)}</div>`;
+
+    function svgText(x,y,text,attrs="") {
+      return `<text x="${x}" y="${y}" ${attrs}>${esc(text)}</text>`;
+    }
+    function bars(items,{height=32,limit=10,colors=COLORS,showPct=false}={}) {
+      const data=(items||[]).filter(x=>Number(x.count)>0).slice(0,limit);
+      if(!data.length)return empty();
+      const width=560,labelW=150,valueW=52,plotW=width-labelW-valueW-14;
+      const gap=9,rowH=height+gap,svgH=data.length*rowH+8;
+      const max=Math.max(1,...data.map(d=>Number(d.count)));
+      const total=data.reduce((s,d)=>s+Number(d.count),0);
+      const body=data.map((d,i)=>{
+        const y=5+i*rowH,w=Math.max(2,plotW*Number(d.count)/max),color=colors[i%colors.length];
+        const label=String(d.label??"");
+        const display=showPct?`${fmt(d.count)} · ${((Number(d.count)/total)*100).toFixed(0)}%`:fmt(d.count);
+        return `<g>
+          <title>${esc(label)}: ${fmt(d.count)}${showPct?` (${((Number(d.count)/total)*100).toFixed(1)}%)`:""}</title>
+          ${svgText(labelW-9,y+height*.68,label.length>12?label.slice(0,11)+"…":label,'text-anchor="end" fill="#68758b" font-size="11"')}
+          <rect x="${labelW}" y="${y}" width="${plotW}" height="${height}" rx="5" fill="#f0f2f7"/>
+          <rect x="${labelW}" y="${y}" width="${w}" height="${height}" rx="5" fill="${color}"/>
+          ${svgText(labelW+plotW+8,y+height*.68,display,'fill="#39465e" font-size="10" font-weight="650"')}
+        </g>`;
+      }).join("");
+      return `<svg viewBox="0 0 ${width} ${svgH}" role="img" aria-label="分类条形图">${body}</svg>`;
+    }
+    function sparkline(points,color="#5578f6",width=240,height=36) {
+      const valid=(points||[]).filter(p=>p.value!=null);
+      if(valid.length<2)return "";
+      const values=valid.map(p=>Number(p.value)),min=Math.min(...values),max=Math.max(...values);
+      const range=max-min||1,pad=3;
+      const coords=values.map((v,i)=>{
+        const x=pad+i*(width-pad*2)/(values.length-1);
+        const y=height-pad-((v-min)/range)*(height-pad*2);
+        return [x,y];
+      });
+      const path=coords.map((p,i)=>`${i?"L":"M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
+      const last=coords[coords.length-1];
+      return `<svg viewBox="0 0 ${width} ${height}" aria-hidden="true"><path d="${path}" fill="none" stroke="${color}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${last[0]}" cy="${last[1]}" r="3" fill="${color}"/></svg>`;
+    }
+    function lineChart(series,{height=230}={}) {
+      const source=series||[];
+      const points=source.flatMap(s=>(s.points||[]).map(p=>({...p,label:s.label})));
+      const batches=[...new Set(points.map(p=>p.batch))].sort();
+      if(!batches.length)return empty();
+      const w=620,h=height,left=42,right=15,top=17,bottom=33,plotH=h-top-bottom,plotW=w-left-right;
+      const vals=points.map(p=>Number(p.value)).filter(Number.isFinite);
+      const min=Math.min(0,...vals),max=Math.max(1,...vals),range=max-min||1;
+      const x=(b)=>left+(batches.indexOf(b)/Math.max(1,batches.length-1))*plotW;
+      const y=(v)=>top+(max-Number(v))/range*plotH;
+      let grid="";
+      for(let i=0;i<4;i++){
+        const gy=top+i*plotH/3,gval=max-i*range/3;
+        grid+=`<line x1="${left}" y1="${gy}" x2="${w-right}" y2="${gy}" stroke="#edf0f5"/>`;
+        grid+=svgText(left-7,gy+3,fmt(gval),'text-anchor="end" fill="#a0a8b6" font-size="9"');
+      }
+      const lines=source.map((s,i)=>{
+        const ps=(s.points||[]).filter(p=>p.value!=null);
+        if(!ps.length)return "";
+        const segments=ps.slice(1).map((p,j)=>{
+          const prev=ps[j],isDemo=p.is_demo||prev.is_demo;
+          return `<line x1="${x(prev.batch)}" y1="${y(prev.value)}" x2="${x(p.batch)}" y2="${y(p.value)}" stroke="${isDemo?"#e4a044":COLORS[i%COLORS.length]}" stroke-width="2.2" stroke-linecap="round"${isDemo?' stroke-dasharray="5 4"':""}/>`;
+        }).join("");
+        return segments+ps.map(p=>`<circle cx="${x(p.batch)}" cy="${y(p.value)}" r="3" fill="${p.is_demo?"#e4a044":"#fff"}" stroke="${p.is_demo?"#e4a044":COLORS[i%COLORS.length]}" stroke-width="2"><title>${esc(s.label)} · ${esc(p.batch)}${p.is_demo?" · 演示批次":""}: ${fmt(p.value,s.decimals)}</title></circle>`).join("");
+      }).join("");
+      const labels=batches.map(batch=>svgText(x(batch),h-8,batch,'text-anchor="middle" fill="#8690a1" font-size="9"')).join("");
+      return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="批次趋势">${grid}${lines}${labels}</svg>`;
+    }
+    function enrollmentChart(items) {
+      const data=items||[];
+      if(!data.length)return empty("当前批次没有可解析的报名月份");
+      const w=560,h=235,l=40,r=15,t=15,b=38,pw=w-l-r,ph=h-t-b;
+      const max=Math.max(1,...data.map(d=>d.count));
+      const grid=[0,1,2,3].map(i=>{
+        const gy=t+i*ph/3;
+        return `<line x1="${l}" y1="${gy}" x2="${w-r}" y2="${gy}" stroke="#edf0f5"/>`+
+          svgText(l-7,gy+3,fmt(max*(1-i/3)),'text-anchor="end" fill="#a0a8b6" font-size="9"');
+      }).join("");
+      const coords=data.map((d,i)=>[
+        l+(data.length===1?pw/2:i*pw/(data.length-1)),
+        t+ph-(d.count/max)*ph,
+      ]);
+      const path=coords.map((p,i)=>`${i?"L":"M"}${p[0]},${p[1]}`).join(" ");
+      const area=`${path} L${coords[coords.length-1][0]},${t+ph} L${coords[0][0]},${t+ph} Z`;
+      const dots=data.map((d,i)=>`<circle cx="${coords[i][0]}" cy="${coords[i][1]}" r="4" fill="#fff" stroke="#5578f6" stroke-width="2"><title>${esc(d.month)}: ${fmt(d.count)} 人</title></circle>`+
+        svgText(coords[i][0],h-12,d.month.slice(2),'text-anchor="middle" fill="#8690a1" font-size="9"')).join("");
+      return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="报名月份趋势">${grid}<path d="${area}" fill="#5578f6" opacity=".08"/><path d="${path}" fill="none" stroke="#5578f6" stroke-width="2.5"/>${dots}</svg>`;
+    }
+    function heatmap(data) {
+      if(!data?.months?.length||!data?.courses?.length)return empty();
+      const max=Math.max(1,...data.heatmap.map(x=>x.count));
+      const valueFor=(course,month)=>data.heatmap.find(x=>x.course===course&&x.month===month)?.count||0;
+      const head=data.months.map(m=>`<th>${esc(m.label)}</th>`).join("");
+      const rows=data.courses.map(course=>`<tr><td title="${esc(course.label)}">${esc(course.label)}</td>`+
+        data.months.map(month=>{
+          const v=valueFor(course.label,month.label),alpha=v?(.10+.72*v/max):.035;
+          const color=v?`rgba(85,120,246,${alpha})`:"#f7f8fb";
+          return `<td style="background:${color}" title="${esc(course.label)} · ${esc(month.label)}: ${v} 条">${v?fmt(v):"·"}</td>`;
+        }).join("")+"</tr>").join("");
+      return `<table aria-label="课程月份人次热力图"><thead><tr><th>课程 / 月份</th>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+    }
+    function kpiCard(kpi,trend,i) {
+      const value=fmt(kpi.value,kpi.decimals)+(kpi.unit||"");
+      const delta=kpi.delta,deltaText=delta==null?"暂无上期对比":
+        `${delta>0?"+":""}${fmt(delta,kpi.decimals)}${kpi.unit||""} 对比上期`;
+      const deltaClass=delta==null?"flat":delta>0?"up":delta<0?"down":"flat";
+      return `<article class="kpi" style="--tone:${COLORS[i%COLORS.length]}">
+        <div class="kpi-head"><span class="kpi-label">${esc(kpi.label)}</span><i class="kpi-dot"></i></div>
+        <div class="kpi-value">${esc(value)}</div>
+        <div class="kpi-foot"><span class="delta ${deltaClass}">${esc(deltaText)}</span></div>
+        <div class="spark">${sparkline(trend?.points,COLORS[i%COLORS.length])}</div>
+      </article>`;
+    }
+    function metricTrends(trends) {
+      $("trend-count").textContent=`${Math.max(0,...(trends||[]).map(t=>t.points.length))} 个批次`;
+      $("trend-grid").innerHTML=(trends||[]).map((s,i)=>`<div>
+        <div class="kpi-head"><span class="kpi-label">${esc(s.label)}</span><span style="color:${COLORS[i%COLORS.length]};font-weight:700">${esc(s.unit||"")}</span></div>
+        <div class="chart" style="min-height:110px">${lineChart([s],{height:125})}</div>
+      </div>`).join("")||empty();
+    }
+    function pieLegend(items) {
+      const valid=(items||[]).filter(i=>Number(i.count)>0);
+      if(!valid.length)return empty();
+      const total=valid.reduce((s,i)=>s+Number(i.count),0),cx=95,cy=95,r=67,circ=2*Math.PI*r;
+      let used=0;
+      const arcs=valid.map((item,i)=>{
+        const ratio=Number(item.count)/total,offset=-used*circ;used+=ratio;
+        return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${COLORS[i%COLORS.length]}" stroke-width="25" stroke-dasharray="${ratio*circ} ${circ}" stroke-dashoffset="${offset}"><title>${esc(item.label)}: ${fmt(item.count)}</title></circle>`;
+      }).join("");
+      const legend=valid.slice(0,8).map((item,i)=>`<span><i style="--c:${COLORS[i%COLORS.length]}"></i>${esc(item.label)} ${fmt(item.count)}</span>`).join("");
+      return `<svg viewBox="0 0 190 190" style="max-width:190px;margin:auto" role="img" aria-label="比例分布图"><g transform="rotate(-90 95 95)"><circle cx="95" cy="95" r="${r}" fill="none" stroke="#eff1f5" stroke-width="25"/>${arcs}</g><text x="95" y="92" text-anchor="middle" fill="#202b40" font-size="23" font-weight="700">${fmt(total)}</text><text x="95" y="110" text-anchor="middle" fill="#8791a2" font-size="9">条记录</text></svg><div class="legend">${legend}</div>`;
+    }
+    function render(data) {
+      const d=data.datasets||{},g=d.denggao||{},r=d.personnel_roster||{},c=d.course_monthly_summary||{};
+      $("loading").hidden=true;$("error").hidden=true;$("dashboard").hidden=false;
+      $("current-batch").textContent=g.batch||"暂无数据";
+      $("record-meta").textContent=g.record_count==null?"尚未入库":`${fmt(g.record_count)} 条记录 · 剔除 ${fmt(g.dropped_rows||0)} 条`;
+      const warnings=[];
+      if(g.kpis?.length<5)warnings.push("登高培训的五项核心指标尚未全部入库。");
+      if(!c.batch)warnings.push("课程月度汇总数据尚未入库，课程热力图为空。");
+      if(c.batch&&c.months?.length)warnings.push(`课程月度数据仅有 ${c.batch} 一个批次，图表呈现当前结构，不代表历史趋势。`);
+      if(warnings.length){$("data-notice").textContent=warnings.join(" ");$("data-notice").classList.add("show")}
+      const trends=g.trends||[];
+      $("kpis").innerHTML=(g.kpis||[]).map((k,i)=>kpiCard(k,trends.find(t=>t.key===k.key),i)).join("")||empty("尚无已入库的核心指标");
+      metricTrends(trends);
+
+      $("enrollment-chart").innerHTML=enrollmentChart(g.enrollment_by_month);
+      $("exam-total").textContent=`${fmt(g.record_count||0)} 人`;
+      $("exam-chart").innerHTML=bars(g.exam_status,{height:24,limit:9,showPct:true});
+      $("schedule-chart").innerHTML=bars(g.exam_schedule,{height:22,limit:3,colors:["#21a99a","#e4a044"],showPct:true});
+      const scored=(g.score_bands||[]).filter(x=>x.label!=="无分数").reduce((s,x)=>s+x.count,0);
+      $("score-count").textContent=`${fmt(scored)} 有分数`;
+      $("score-chart").innerHTML=bars(g.score_bands,{height:24,limit:9,colors:["#e4a044","#5578f6","#21a99a","#21a99a","#4ea980","#e56b70","#b9c0cd"]});
+      $("payment-chart").innerHTML=pieLegend(g.payment_status);
+      $("invoice-chart").innerHTML=bars(g.invoice_status,{height:22,limit:4,colors:["#21a99a","#e4a044","#b9c0cd"],showPct:true});
+      const paid=(g.payment_status||[]).find(x=>x.label==="已付款")?.count||0;
+      const invoiced=(g.invoice_status||[]).find(x=>x.label==="已开票")?.count||0;
+      $("finance-stats").innerHTML=`<div class="status-card"><b>${fmt(paid)}</b><div>已付款人数</div></div><div class="status-card"><b>${fmt(invoiced)}</b><div>已开票人数</div></div><div class="status-card"><b>${fmt(g.reported_amount?.value||0)} 元</b><div>记录金额合计 · 待核口径</div></div><div class="status-card"><b>${fmt(g.deferred_cert_count||0)}</b><div>延期换证人数</div></div>`;
+      $("amount-note").textContent=g.reported_amount?.note||"金额未入库";
+      const att=(g.attendance||[]).flatMap(day=>day.values.filter(v=>v.label!=="未填写").map(v=>({label:`${day.label} · ${v.label}`,count:v.count})));
+      $("attendance-chart").innerHTML=bars(att,{height:23,limit:8,colors:["#21a99a","#e4a044","#e56b70","#9078d8"]});
+      $("retry-chart").innerHTML=bars(g.retry_distribution,{height:23,limit:6,colors:["#5578f6","#e4a044","#e56b70"]});
+
+      $("course-batch").textContent=c.batch?`批次 ${c.batch}`:"无课程批次";
+      $("course-stats").innerHTML=[
+        ["汇总明细行",c.detail_rows||0],["身份键去重人数",c.unique_learners||0],["课程数",c.courses?.length||0]
+      ].map(([label,value])=>`<div class="stat"><div class="stat-label">${esc(label)}</div><div class="stat-value">${fmt(value)}</div></div>`).join("");
+      $("heatmap").innerHTML=heatmap(c);
+      $("monthly-payment-chart").innerHTML=bars(c.payment_status,{height:22,limit:4,showPct:true});
+
+      $("roster-batch").textContent=r.batch?`批次 ${r.batch} · ${fmt(r.record_count)} 人`:"暂无名单批次";
+      $("education-chart").innerHTML=bars(r.education,{height:22,limit:8});
+      $("title-chart").innerHTML=bars(r.title_level,{height:22,limit:8,colors:["#9078d8","#5578f6","#21a99a"]});
+      $("roster-payment-chart").innerHTML=bars(r.payment_status,{height:22,limit:4,showPct:true});
+      $("roster-course-chart").innerHTML=bars(r.courses,{height:21,limit:8});
+      $("employer-chart").innerHTML=bars(r.employers,{height:21,limit:8,colors:["#21a99a","#5578f6","#9078d8"]});
+
+      const anomalies=g.anomalies||{};
+      $("anomaly-total").textContent=`${fmt(anomalies.total||0)} 项`;
+      $("anomaly-chart").innerHTML=bars((anomalies.by_rule||[]).map(x=>({label:x.label,count:x.count})),{height:25,limit:8,colors:["#e56b70","#e4a044","#9078d8"]});
+      $("anomaly-trend").innerHTML=lineChart([{
+        label:"全部异常",unit:"项",points:(anomalies.trend||[]).map(x=>({batch:x.batch,value:x.total,is_demo:x.is_demo}))
+      }],{height:235});
+    }
+    async function load() {
+      $("refresh").disabled=true;$("refresh").textContent="加载中…";
+      try {
+        const response=await fetch("/dashboard/data",{cache:"no-store"});
+        if(!response.ok)throw new Error(`HTTP ${response.status}`);
+        render(await response.json());
+      } catch(error) {
+        $("loading").hidden=true;$("error").hidden=false;$("error").textContent=`驾驶舱加载失败：${error.message}`;
+      } finally {$("refresh").disabled=false;$("refresh").textContent="刷新数据";}
+    }
+    $("refresh").addEventListener("click",load);
+    load();
+  </script>
+</body>
+</html>

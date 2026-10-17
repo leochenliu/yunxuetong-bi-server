@@ -8,21 +8,51 @@
   python -m bi.cli metrics  [batch]            指标快照
   python -m bi.cli simulate <from> <to>        从真实数据派生下一期（含 ground truth）
   python -m bi.cli api                         启动 FastAPI 服务
+  python -m bi.cli watch                       监控新批次并自动入库、分析
 """
 
 from __future__ import annotations
 
 import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+
+import yaml
 
 # 允许直接 `python src/bi/cli.py` 运行
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from bi.config import load_dataset_config, load_metrics_config  # noqa: E402
-from bi.ingest import ingest, resolve_input_file  # noqa: E402
-from bi.settings import get_settings  # noqa: E402
+from bi.config import DatasetConfig, MetricDef, load_dataset_config, load_metrics_config  # noqa: E402
+from bi.excel_reader import file_fingerprint  # noqa: E402
+from bi.ingest import Ingested, ingest, resolve_input_file  # noqa: E402
+from bi.settings import Settings, get_settings  # noqa: E402
+
+
+@dataclass
+class BatchIngestResult:
+    dataset_id: str
+    version_id: int
+    filename: str
+    records: int
+    metrics: int
+    anomalies: int
+    cfg: DatasetConfig
+    metrics_defs: list[MetricDef]
+    ingested: Ingested
+
+
+def load_import_sources(settings: Settings) -> list[dict[str, str]]:
+    manifest_path = settings.config_dir / "import_sources.yaml"
+    if not manifest_path.exists():
+        return []
+    with manifest_path.open("r", encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    sources = data.get("sources", [])
+    if not isinstance(sources, list):
+        raise ValueError(f"sources 必须是列表: {manifest_path}")
+    return sources
 
 
 def _force_utf8() -> None:
@@ -104,15 +134,122 @@ def cmd_diff(batch_from: str, batch_to: str) -> None:
             print(f"    {rc.name or rc.id_number}: {detail}")
 
 
-def cmd_ingest(batch: str) -> None:
+def ingest_batch(batch: str, settings: Settings) -> list[BatchIngestResult]:
     from bi.store import FactStore
 
-    settings = get_settings()
     store = FactStore(settings)
-    ds = ingest(batch, settings=settings)
-    vid = store.save_ingested(ds)
-    print(f"已入站批次 {batch} -> version_id={vid}")
-    print(f"  记录数 {len(ds.snapshot.records)}  指标 {len(ds.metrics)}  异常 {len(ds.anomalies)}")
+    source_specs = load_import_sources(settings)
+
+    batch_dir = settings.inbound_dir / batch
+    configured_files = [
+        (spec, batch_dir / spec["filename"])
+        for spec in source_specs
+        if (batch_dir / spec["filename"]).is_file()
+    ]
+    if configured_files:
+        missing = [
+            spec["filename"] for spec in source_specs
+            if not (batch_dir / spec["filename"]).is_file()
+        ]
+        if missing:
+            raise FileNotFoundError(
+                f"批次 {batch} 缺少配置的数据文件: {', '.join(missing)}"
+            )
+        results: list[BatchIngestResult] = []
+        for spec, file_path in configured_files:
+            cfg = load_dataset_config(settings.config_dir / spec["dataset_config"])
+            metrics_defs = load_metrics_config(settings.config_dir / spec["metrics_config"])
+            ds = ingest(batch, settings=settings, cfg=cfg, metrics_defs=metrics_defs,
+                        file_path=file_path)
+            vid = store.save_ingested(ds, cfg)
+            results.append(BatchIngestResult(
+                cfg.id, vid, file_path.name, len(ds.snapshot.records),
+                len(ds.metrics), len(ds.anomalies), cfg, metrics_defs, ds,
+            ))
+        return results
+
+    cfg = load_dataset_config(settings.dataset_config_path)
+    metrics_defs = load_metrics_config(settings.metrics_config_path)
+    ds = ingest(batch, settings=settings, cfg=cfg, metrics_defs=metrics_defs)
+    vid = store.save_ingested(ds, cfg)
+    return [BatchIngestResult(
+        cfg.id, vid, Path(ds.source_file).name, len(ds.snapshot.records),
+        len(ds.metrics), len(ds.anomalies), cfg, metrics_defs, ds,
+    )]
+
+
+def analyze_batch(batch: str, settings: Settings) -> list[BatchIngestResult]:
+    from bi.anomaly import check_cross_period_anomalies
+    from bi.diff_engine import diff_dataset_against_snapshot
+    from bi.store import FactStore
+
+    store = FactStore(settings)
+    results = ingest_batch(batch, settings)
+    for current in results:
+        print(
+            f"已入站数据集 {current.dataset_id}（批次 {batch}）"
+            f"-> version_id={current.version_id}"
+        )
+        print(
+            f"  文件 {current.filename}  记录数 {current.records}"
+            f"  指标 {current.metrics}  异常 {current.anomalies}"
+        )
+        prior_versions = [
+            version for version in store.list_versions(current.dataset_id)
+            if version["batch"] < batch
+        ]
+        if not prior_versions:
+            print(f"无同数据集的上一批次：{current.dataset_id}（{batch}），跳过差分")
+            continue
+
+        previous = max(prior_versions, key=lambda version: version["batch"])
+        previous_source = Path(previous["source_file"])
+        if file_fingerprint(previous_source)["sha256"] != previous["sha256"]:
+            raise RuntimeError(
+                f"上一批次源文件指纹已变化，拒绝生成不可靠差分：{previous_source}"
+            )
+        previous_data = ingest(
+            previous["batch"],
+            settings=settings,
+            cfg=current.cfg,
+            metrics_defs=current.metrics_defs,
+            file_path=previous_source,
+        )
+        diff = diff_dataset_against_snapshot(
+            previous_data.snapshot, current.ingested.dataset, current.cfg,
+            previous["batch"], batch,
+        )
+        previous_version_id = store.version_id_of(
+            previous["batch"], current.dataset_id
+        )
+        if previous_version_id is None:
+            raise RuntimeError(
+                f"找不到上一批次版本：{current.dataset_id}/{previous['batch']}"
+            )
+        event_count = store.save_diff(
+            diff,
+            current.cfg,
+            previous_version_id,
+            current.version_id,
+        )
+        cross_period = check_cross_period_anomalies(diff, current.cfg)
+        if cross_period:
+            store.save_cross_period_anomalies(cross_period, current.version_id)
+        print(
+            f"分析完成 {current.dataset_id}：{previous['batch']} -> {batch}，"
+            f"差分事件 {event_count} 条，跨期异常 {len(cross_period)} 条"
+        )
+    return results
+
+
+def cmd_ingest(batch: str) -> None:
+    analyze_batch(batch, get_settings())
+
+
+def cmd_watch() -> None:
+    from bi.watcher import watch_inbound
+
+    watch_inbound(get_settings())
 
 
 def cmd_seed() -> None:
@@ -150,6 +287,8 @@ def main(argv: list[str] | None = None) -> int:
             cmd_diff(rest[0], rest[1])
         elif cmd == "ingest":
             cmd_ingest(rest[0])
+        elif cmd == "watch":
+            cmd_watch()
         elif cmd == "seed":
             cmd_seed()
         elif cmd == "simulate":

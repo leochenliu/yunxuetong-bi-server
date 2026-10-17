@@ -1,0 +1,7 @@
+sources:
+  - filename: "(培训人员)表格视图.xlsx"
+    dataset_config: "datasets/personnel_roster.yaml"
+    metrics_config: "metrics/personnel_roster.yaml"
+  - filename: "合并汇总表（带课程月份）.xlsx"
+    dataset_config: "datasets/course_monthly_summary.yaml"
+    metrics_config: "metrics/course_monthly_summary.yaml"

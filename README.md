@@ -95,11 +95,33 @@ python -m bi.cli diff 20261012 20261013
 
 # 3) 起服务（同时托管对话页）
 python -m bi.cli api                   # http://127.0.0.1:8787/
+# 驾驶舱：http://127.0.0.1:8787/dashboard
 
 # 4) 单测 / 验收
 pytest -q                              # 61 passed
 python scripts/acceptance.py           # 生成 docs/ACCEPTANCE.md
 ```
+
+单独入站一个批次（例如 `20261015`）：
+
+```powershell
+python -m bi.cli ingest 20261015
+```
+
+当批次目录包含 [import_sources.yaml](config/import_sources.yaml) 中定义的全部来源文件时，
+命令会按各自配置分别写入数据集；不在当前“登高总表”分析口径内，也不会与其建立差分。
+
+持续监控新批次并自动入库、分析：
+
+```powershell
+python -m bi.cli watch
+```
+
+监控器每 5 秒扫描一次 `data\inbound` 的一级子目录；配置清单要求的来源文件齐全且稳定 10 秒后开始处理。
+同一数据集存在更早批次时，会保存与最近上一批次的差分和跨期异常；首次出现的数据集只入库。
+监控器会跳过文件指纹未变化的已入库批次，处理失败则记录错误并稍后重试。此命令需保持运行；
+要登录 Windows 后自动运行，可在任务计划程序中创建登录触发的任务，程序设为当前虚拟环境的
+`python.exe`，参数设为 `-m bi.cli watch`，起始位置设为项目根目录。
 
 MCP 接入（stdio）：
 
@@ -270,6 +292,7 @@ src/bi/
   agent.py            ⑤ 自然语言 Agent
   ingest.py / seed.py / cli.py / settings.py
 web/index.html        ⑤ 对话页（浅色 · 单文件 · 无外部依赖）
+web/dashboard.html    业务驾驶舱（图表优先，聚合展示多数据集指标）
 tests/                61 个测试（阶段一~五）
 scripts/acceptance.py 端到端验收 → docs/ACCEPTANCE.md
 ```

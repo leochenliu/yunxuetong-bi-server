@@ -21,6 +21,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from .attribution import attribute_metric
+from .dashboard import dashboard_data
 from .insights import router as insights_router
 from .settings import get_settings
 from .store import FactStore
@@ -69,6 +70,19 @@ def health() -> dict[str, Any]:
         "batches": [v["batch"] for v in versions],
         "records": {v["batch"]: v["record_count"] for v in versions},
     }
+
+
+@app.get("/dashboard/data", summary="驾驶舱图表聚合数据")
+def dashboard_data_endpoint() -> dict[str, Any]:
+    t0 = time.perf_counter()
+    settings = get_settings()
+    result = dashboard_data(settings)
+    row_count = sum(
+        dataset.get("record_count", dataset.get("detail_rows", 0))
+        for dataset in result["datasets"].values()
+    )
+    _audit("dashboard_data", {}, row_count, t0)
+    return result
 
 
 @app.get("/versions", summary="版本列表")
@@ -222,6 +236,14 @@ def index() -> HTMLResponse:
     page = get_settings().project_root / "web" / "index.html"
     if not page.exists():
         return HTMLResponse("<h1>web/index.html 不存在</h1>", status_code=404)
+    return HTMLResponse(page.read_text(encoding="utf-8"))
+
+
+@app.get("/dashboard", response_class=HTMLResponse, summary="业务运营驾驶舱")
+def dashboard_page() -> HTMLResponse:
+    page = get_settings().project_root / "web" / "dashboard.html"
+    if not page.exists():
+        return HTMLResponse("<h1>web/dashboard.html 不存在</h1>", status_code=404)
     return HTMLResponse(page.read_text(encoding="utf-8"))
 
 
