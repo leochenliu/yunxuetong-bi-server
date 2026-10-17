@@ -21,6 +21,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from .attribution import attribute_metric
+from .insights import router as insights_router
 from .settings import get_settings
 from .store import FactStore
 
@@ -221,6 +222,17 @@ def index() -> HTMLResponse:
     page = get_settings().project_root / "web" / "index.html"
     if not page.exists():
         return HTMLResponse("<h1>web/index.html 不存在</h1>", status_code=404)
+    return HTMLResponse(page.read_text(encoding="utf-8"))
+
+
+app.include_router(insights_router)
+
+
+@app.get("/insights", response_class=HTMLResponse, summary="图形优先 dashboard")
+def insights_page() -> HTMLResponse:
+    page = get_settings().project_root / "web" / "insights.html"
+    if not page.exists():
+        return HTMLResponse("<h1>web/insights.html 不存在</h1>", status_code=404)
     return HTMLResponse(page.read_text(encoding="utf-8"))
 
 
