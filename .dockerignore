@@ -1,0 +1,15 @@
+.git
+.gitignore
+.dockerignore
+.env
+.env.*
+!.env.example
+.venv
+.bivenv
+__pycache__
+*.py[cod]
+.pytest_cache
+.workbuddy
+data
+tests
+docs

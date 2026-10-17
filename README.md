@@ -152,6 +152,28 @@ python scripts/migrate_sqlite_to_postgres.py
 脚本保留现有主键与外键关系，要求目标表为空，不会覆盖已有数据；完成后将连接串放入
 `.env` 或部署密钥配置，再正常启动服务。健康检查只显示数据库类型，不会返回连接串或密码。
 
+### Docker 部署
+
+镜像默认监听容器内的 `8787` 端口，以非 root 用户运行；SQLite 文件及导入文件位于 `/data`，
+生产环境建议挂载持久化卷。构建并运行：
+
+```powershell
+docker build -t yunxuetong-bi-server .
+docker run --name yunxuetong-bi-server `
+  --env-file .env `
+  -p 8787:8787 `
+  -v yunxuetong-bi-data:/data `
+  -e BI_API_HOST=0.0.0.0 `
+  -e BI_DB_PATH=/data/store/bi.sqlite3 `
+  -e BI_INBOUND_DIR=/data/inbound `
+  yunxuetong-bi-server
+```
+
+`.env` 中放置 `BI_DATABASE_URL`，或在部署平台配置该密钥；不要将密码写在命令行或镜像里。
+使用 PostgreSQL 时，`/data` 卷主要用于放置待导入的 Excel 文件。`/health`
+容器健康检查端点会检查应用和数据库是否可用。容器只运行 API；需要自动监控新批次时，
+应另行运行 `python -m bi.cli watch` worker，并让 worker 与 API 使用相同数据库和入站文件卷。
+
 ---
 
 ## 四、第一阶段的三件定义（本项目的地基）
