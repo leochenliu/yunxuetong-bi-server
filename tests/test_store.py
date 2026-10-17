@@ -9,8 +9,10 @@ def test_versions_persisted(seeded, settings):
     store = FactStore(settings)
     versions = store.list_versions()
     batches = [v["batch"] for v in versions]
-    assert batches == ["20261012", "20261013"]
-    v1, v2 = versions
+    # 真实 D1 + D2 必须存在（可能额外有 demo 期，但 test_timeseries 不持久化它们）
+    assert "20261012" in batches and "20261013" in batches
+    v1 = next(v for v in versions if v["batch"] == "20261012")
+    v2 = next(v for v in versions if v["batch"] == "20261013")
     assert v1["record_count"] == 883
     assert v2["record_count"] == 887
     assert v1["dropped_rows"] == 22

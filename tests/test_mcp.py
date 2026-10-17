@@ -43,7 +43,11 @@ def test_tool_set_is_exactly_six_readonly_capabilities():
 # ---------------- 能力一致 ----------------
 def test_list_batches():
     out = M.bi_list_batches()
-    assert out["count"] == 2
+    # 至少 D1 + D2 必须存在（可能有 demo 期，但 test_timeseries 不持久化）
+    assert out["count"] >= 2
+    batches = {b["batch"] for b in out["batches"]}
+    assert "20261012" in batches
+    assert "20261013" in batches
     assert {b["batch"] for b in out["batches"]} == {F, T}
 
 

@@ -128,6 +128,21 @@
     padding-top:24px;border-top:1px solid var(--line)}
   footer a{color:var(--indigo);text-decoration:none;margin:0 8px}
 
+  /* ========== 时间序列小图 ========== */
+  .ts-strip{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+  .ts-row{display:grid;grid-template-columns:90px 1fr 80px;gap:8px;align-items:center;
+    font-size:11.5px;padding:4px 0}
+  .ts-row .name{color:var(--ink-2)}
+  .ts-row svg{display:block;width:100%;height:30px}
+  .ts-row .val{text-align:right;font-variant-numeric:tabular-nums;font-weight:600;color:var(--ink)}
+  .ts-row .delta{text-align:right;font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+  .ts-row .delta.up{color:var(--green)}
+  .ts-row .delta.down{color:var(--red)}
+  .ts-demo{background:var(--amber-soft);border:1px solid var(--amber-line);border-radius:6px;
+    padding:6px 10px;margin:14px 0;font-size:11.5px;color:#92400e;line-height:1.6}
+  .ts-demo b{font-weight:600}
+  .ts-empty{padding:24px;text-align:center;color:var(--ink-3);font-size:12.5px}
+
   /* SVG 文本 */
   text{font-family:inherit}
 </style>
@@ -192,6 +207,22 @@
         <b>当前数据：</b>D1 所有人开班都在近一年，到期数 = 0 是预期。系统就位，3 年后即可算。
         <b>为什么没续</b> 将按 4 类分布展示（培训中 / 退费取消 / 失联未启动 / 可结算其他）。
       </div>
+    </div>
+  </section>
+
+  <!-- ========== 时间序列：5 个核心指标的趋势 ========== -->
+  <section>
+    <div class="sec-hd">
+      <span class="sec-num">·</span>
+      <span class="sec-title">5 个核心指标 · 6 期趋势</span>
+      <span class="sec-tag" id="ts-batch-count">— 期</span>
+    </div>
+    <div class="sec-body">
+      <div class="ts-demo" id="ts-demo-banner" style="display:none">
+        <b>⚠ 部分历史期是示例数据</b>：标虚线 / 黄点的是从 D1 倒推的演示数据（4 期），
+        实线是真实 D1 / D2。趋势线**可参考但不可用于业务决策**。等真实历史批次进来即可替换。
+      </div>
+      <div class="ts-strip" id="ts-strip"></div>
     </div>
   </section>
 
@@ -280,10 +311,23 @@ async function load() {
   catch (e) { document.body.innerHTML = `<div class="wrap"><h1>加载失败：${esc(e.message)}</h1></div>`; return; }
   renderHero(data);
   renderKPI(data);
+  renderTimeseries(data);
   renderRenewal(data.renewal);
   renderRisk(data.progress);
   renderTeachers(data.teachers);
   renderFunnel(data.funnel);
+}
+
+// ========== 时间序列：5 指标 × 6 期小图 ==========
+function renderTimeseries(d) {
+  const ts = d.timeseries || {};
+  const demo = d.demo_batches || [];
+  // 总期数（取任一指标的最大长度）
+  const total = Math.max(0, ...Object.values(ts).map(arr => arr.length));
+  $("ts-batch-count").textContent = total > 0 ? `${total} 期` : "—";
+  // 有 demo 期则显示提示
+  $("ts-demo-banner").style.display = demo.length > 0 ? "" : "none";
+  $("ts-strip").innerHTML = tsStrip(ts, demo);
 }
 
 function renderHero(d) {
@@ -308,6 +352,109 @@ function renderKPI(d) {
   const bn = d.funnel.bottleneck;
   $("kpi-4").querySelector(".bignum").textContent = bn ? pct(bn.rate) : "—";
   $("kpi-4").querySelector(".desc").textContent = bn ? `${bn.from} → ${bn.to}` : "暂无数据";
+}
+
+// ========== 时间序列小图（每个痛点都用）============
+function tsChart(series, opts = {}) {
+  // series: [{batch, value}]（按 batch 升序）
+  // opts.color、opts.demoBatches（['20260619',...]）、opts.demo
+  if (!series || series.length === 0) {
+    return `<svg viewBox="0 0 100 30" preserveAspectRatio="none"><line x1="0" y1="15" x2="100" y2="15" stroke="#e5e7eb" stroke-width="1"/></svg>`;
+  }
+  const color = opts.color || "#4f46e5";
+  const demo = new Set(opts.demoBatches || []);
+  // 过滤 null
+  const pts = series.filter(p => p.value != null).map(p => ({
+    batch: p.batch, value: p.value, demo: demo.has(p.batch)
+  }));
+  if (pts.length === 0) return `<div class="ts-empty">无数据</div>`;
+  const W = 100, H = 30, P = 2;
+  const xs = pts.map((_, i) => P + (W - 2*P) * (i / Math.max(pts.length - 1, 1)));
+  const vmin = Math.min(...pts.map(p => p.value));
+  const vmax = Math.max(...pts.map(p => p.value));
+  const yFor = v => vmax === vmin ? H/2 : H - P - (H - 2*P) * ((v - vmin) / (vmax - vmin));
+  const ys = pts.map(p => yFor(p.value));
+  // 真实段（实线）+ 示例段（虚线）
+  let realPath = "", demoPath = "", first = true;
+  for (let i = 0; i < pts.length; i++) {
+    const x = xs[i], y = ys[i], seg = `M ${x.toFixed(1)} ${y.toFixed(1)}`;
+    if (pts[i].demo) {
+      demoPath += (first ? seg : " L " + x.toFixed(1) + " " + y.toFixed(1));
+    } else {
+      realPath += (first ? seg : " L " + x.toFixed(1) + " " + y.toFixed(1));
+    }
+    first = false;
+  }
+  // 分段点（避免跨段连）
+  let segments = "";
+  // 把 demo 段单独画
+  for (let i = 1; i < pts.length; i++) {
+    if (pts[i].demo !== pts[i-1].demo) {
+      // 在 i 处切：把前一段的最后一个点 + 后一段的第一个点断开重画
+      // 简化：直接在分界点重置路径起点
+    }
+  }
+  // 简化：每段独立画
+  let dPath = "";
+  let lastDemo = null;
+  for (let i = 0; i < pts.length; i++) {
+    const x = xs[i].toFixed(1), y = ys[i].toFixed(1);
+    if (lastDemo === null || pts[i].demo !== lastDemo) {
+      dPath += (dPath ? " " : "") + "M " + x + " " + y;
+    } else {
+      dPath += " L " + x + " " + y;
+    }
+    lastDemo = pts[i].demo;
+  }
+  // 点
+  const dots = pts.map((p, i) =>
+    `<circle cx="${xs[i].toFixed(1)}" cy="${ys[i].toFixed(1)}" r="${p.demo ? 1.6 : 2.2}" fill="${p.demo ? "#fbbf24" : color}"/>`
+  ).join("");
+  // 起点终点标注
+  const firstP = pts[0], lastP = pts[pts.length - 1];
+  return `<svg viewBox="0 0 100 30" preserveAspectRatio="none">
+    <path d="${dPath}" fill="none" stroke="${color}" stroke-width="1.2"
+          stroke-dasharray="${pts.some(p => p.demo) ? '2 1' : '0'}" />
+    ${dots}
+  </svg>`;
+}
+
+function tsStrip(map, demoBatches) {
+  if (!map || Object.keys(map).length === 0) {
+    return `<div class="ts-empty">无时间序列数据</div>`;
+  }
+  const names = {
+    enrolled_total: "报名总人数",
+    exam_scheduled: "已安排考试",
+    exam_passed: "已通过",
+    avg_score: "平均分",
+    paid_count: "已付款",
+  };
+  const colors = {
+    enrolled_total: "#4f46e5",
+    exam_scheduled: "#d97706",
+    exam_passed: "#16a34a",
+    avg_score: "#a855f7",
+    paid_count: "#dc2626",
+  };
+  return Object.keys(map).map(k => {
+    const arr = map[k];
+    const first = arr.find(p => p.value != null);
+    const last = [...arr].reverse().find(p => p.value != null);
+    if (!first || !last) return "";
+    const delta = last.value - first.value;
+    const pct_ = first.value ? (delta / first.value * 100) : 0;
+    const dirCls = delta > 0 ? "up" : delta < 0 ? "down" : "";
+    const sign = delta > 0 ? "+" : "";
+    return `<div class="ts-row">
+      <div class="name">${esc(names[k] || k)}</div>
+      ${tsChart(arr, {color: colors[k] || "#4f46e5", demoBatches})}
+      <div>
+        <div class="val">${num(last.value, k === "avg_score" ? 1 : 0)}</div>
+        <div class="delta ${dirCls}">${sign}${num(delta, k === "avg_score" ? 1 : 0)}（${sign}${pct_.toFixed(1)}%）</div>
+      </div>
+    </div>`;
+  }).join("");
 }
 
 // ========== 痛点 1：续费漏斗 ==========

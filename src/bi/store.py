@@ -212,8 +212,11 @@ class FactStore:
             conn.executescript(SCHEMA)
 
     # ---------------- 写入：一期数据 ----------------
-    def save_ingested(self, ingested: Ingested, cfg=None) -> int:
-        """落库一期数据（幂等：同 dataset+batch 覆盖重建）。返回 version_id。"""
+    def save_ingested(self, ingested: Ingested, cfg=None, extra_notes: list[str] | None = None) -> int:
+        """落库一期数据（幂等：同 dataset+batch 覆盖重建）。返回 version_id。
+
+        extra_notes: 调用方追加的说明（例：历史期标注 "[示例数据]"）。
+        """
         self.init_schema()
         if cfg is None:
             from .config import load_dataset_config
@@ -233,6 +236,7 @@ class FactStore:
                 m = re.search(r"已剔除\s*(\d+)\s*行", note)
                 if m:
                     dropped = int(m.group(1))
+        all_notes = list(ingested.notes) + list(extra_notes or [])
 
         with self.connect() as conn:
             # 幂等：先清掉引用这些版本的差分事件，再删版本本身。
@@ -259,7 +263,7 @@ class FactStore:
                  fp["sha256"], fp["size_bytes"], fp["modified_at"], _now(),
                  len(ds.rows) + dropped, len(ds.rows), dropped,
                  json.dumps(ds.columns, ensure_ascii=False),
-                 json.dumps(ingested.notes, ensure_ascii=False)),
+                 json.dumps(all_notes, ensure_ascii=False)),
             )
             version_id = int(cur.lastrowid)
 
@@ -386,7 +390,21 @@ class FactStore:
                    FROM upload_versions v WHERE v.dataset_id=? ORDER BY v.batch""",
                 (dataset_id,),
             ).fetchall()
-        return [dict(r) for r in rows]
+        result = []
+        for r in rows:
+            d = dict(r)
+            # 解析 notes 找 [示例] 标记
+            if d.get("notes_json"):
+                try:
+                    notes = json.loads(d["notes_json"])
+                    d["is_demo"] = any("[示例" in n for n in notes)
+                    d["notes"] = notes
+                except (json.JSONDecodeError, TypeError):
+                    d["is_demo"] = False
+            else:
+                d["is_demo"] = False
+            result.append(d)
+        return result
 
     def metric_snapshot(self, batch: str) -> dict[str, dict[str, Any]]:
         with self.connect() as conn:
@@ -395,6 +413,28 @@ class FactStore:
                    FROM metric_snapshots WHERE batch=?""", (batch,)
             ).fetchall()
         return {r["metric_key"]: dict(r) for r in rows}
+
+    def metric_timeseries(self, metric_key: str,
+                          dataset_id: str = "denggao",
+                          from_batch: str | None = None,
+                          to_batch: str | None = None) -> list[dict[str, Any]]:
+        """某指标在多期上的值（按 batch 升序）。指标快照表读取，O(N) 极快。"""
+        with self.connect() as conn:
+            where = ["v.dataset_id=?", "m.metric_key=?"]
+            params: list[Any] = [dataset_id, metric_key]
+            if from_batch:
+                where.append("m.batch >= ?"); params.append(from_batch)
+            if to_batch:
+                where.append("m.batch <= ?"); params.append(to_batch)
+            rows = conn.execute(
+                f"""SELECT m.batch, m.value, m.unit, m.metric_name, m.decimals,
+                          v.sha256 AS file_sha256,
+                          v.record_count, v.row_count
+                   FROM metric_snapshots m
+                   JOIN upload_versions v ON v.id = m.version_id
+                   WHERE {' AND '.join(where)}
+                   ORDER BY m.batch""", params).fetchall()
+        return [dict(r) for r in rows]
 
     def anomaly_counts(self, batch: str) -> dict[str, int]:
         with self.connect() as conn:
