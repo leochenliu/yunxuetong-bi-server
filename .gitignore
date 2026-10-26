@@ -25,3 +25,5 @@ data/store/
 out/
 *.log
 d.json
+
+.workbuddy
