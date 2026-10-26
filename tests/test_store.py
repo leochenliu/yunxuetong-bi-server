@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from bi.store import POSTGRES_SCHEMA, FactStore, _ConnectionAdapter, hash_id_number, mask_id_number
+from bi.store import POSTGRES_SCHEMA, FactStore, _ConnectionAdapter, mask_id_number
 
 
 def test_versions_persisted(seeded, settings):
@@ -74,8 +74,8 @@ def test_evidence_chain_traces_to_source_row(seeded, settings):
     assert after["payload"]["分数"] == ev["value_to_raw"]
 
 
-def test_pii_not_stored_in_plaintext(seeded, settings):
-    """默认不落明文证件号：独立列与 payload 都应是掩码。"""
+def test_pii_stored_plaintext_masked_on_output(seeded, settings):
+    """事实层落明文证件号，但**展示面**（payload / 证据链）必须一律掩码。"""
     import json
 
     store = FactStore(settings)
@@ -85,20 +85,22 @@ def test_pii_not_stored_in_plaintext(seeded, settings):
                JOIN upload_versions v ON v.id=r.version_id
                WHERE v.dataset_id='denggao' LIMIT 1"""
         ).fetchone()
-    assert rec["id_number_plain"] is None
-    masked = rec["id_number_masked"]
-    assert "*" in masked and len(masked) == 18
-    assert len(rec["id_number_hash"]) == 64
+    # 事实层：明文，独立一列（明文是为了按证件号精确去重与跨源关联）
+    assert rec["id_number"] and "*" not in rec["id_number"]
+    assert len(rec["id_number"]) == 18
+    # 不再有 hash / masked / plain 三列并存
+    assert not {"id_number_hash", "id_number_masked", "id_number_plain"} & set(rec.keys())
+    # 展示层：payload 里的证件号与手机号都必须是掩码
     payload = json.loads(rec["payload_json"])
     assert "*" in str(payload.get("证件号码", "")), "payload 中的证件号必须已掩码"
     assert "*" in str(payload.get("联系电话", "")), "payload 中的手机号必须已掩码"
 
 
-def test_mask_and_hash_helpers():
+def test_mask_helper():
     masked = mask_id_number("320826197306181638")
     assert masked.startswith("320826") and masked.endswith("1638") and "*" in masked
-    assert len(hash_id_number("320826197306181638")) == 64
-    assert hash_id_number("320826197306181638") != hash_id_number("320826197306181639")
+    assert len(masked) == 18
+    assert mask_id_number("123") == "***"
 
 
 def test_postgres_schema_and_placeholders_are_adapted():

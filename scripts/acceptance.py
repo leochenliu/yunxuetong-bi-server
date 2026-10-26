@@ -97,7 +97,7 @@ def main() -> int:
     out("  表行数：" + "、".join(f"{k} {v}" for k, v in counts.items()))
     location = store.backend if store.backend == "postgresql" else str(store.db_path)
     out(f"  数据库：{location}")
-    out(f"  隐私：证件号明文落库={'是' if settings.store_pii_plaintext else '否（仅 sha256 + 掩码）'}")
+    out("  隐私：事实层存明文证件号（精确去重/跨源关联用），输出层一律掩码（前 6 后 4）")
 
     # ================= 阶段三 =================
     hr("阶段三 · 固定查询 API")

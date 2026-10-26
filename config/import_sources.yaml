@@ -1,7 +1,35 @@
+# ============================================================================
+# 导入路由表：每份 Excel 按「文件名包含的片段」匹配到对应数据集。
+#
+# 匹配规则（src/bi/cli.py::match_sources_for_batch）：
+#   - 取 spec 里的 `match`（若存在）或 `filename` 字段作为「匹配片段」；
+#   - 只要 Excel 文件名里 *包含* 该片段即命中（子串匹配，非精确相等）；
+#   - 同一批次目录里每份文件独立匹配，不再要求「所有配置必须齐备」。
+#
+# 这样「按文件名头 N 字区分项目」自然成立：
+#   登高总表.xlsx                  -> 含 "登高"        -> 登高培训(denggao)
+#   继续教育合并汇总表（带课程月份）.xlsx -> 含 "合并汇总"  -> 课程月份汇总(course_monthly_summary)
+#   继续教育培训人员表格视图.xlsx    -> 含 "培训人员"      -> 培训人员名单(personnel_roster)
+# 注意：两份继续教育文件头 2 字都是"继续"，但 schema 不同、必须落到两个数据集，
+# 因此这里用更长的文件名片段（合并汇总 / 培训人员）作匹配键，避免撞车。
+#
+# 新增项目：复制一条，改 `filename` 匹配片段 + dataset_config / metrics_config 即可。
+# ============================================================================
+
 sources:
-  - filename: "(培训人员)表格视图.xlsx"
+  - filename: "登高"
+    dataset_config: "dataset.yaml"
+    metrics_config: "metrics.yaml"
+
+  - filename: "培训人员"
     dataset_config: "datasets/personnel_roster.yaml"
     metrics_config: "metrics/personnel_roster.yaml"
-  - filename: "合并汇总表（带课程月份）.xlsx"
+
+  - filename: "合并汇总"
     dataset_config: "datasets/course_monthly_summary.yaml"
     metrics_config: "metrics/course_monthly_summary.yaml"
+
+  # 证书台账（小黄卡）：新的统计类目，核心口径是过期日期
+  - filename: "小黄卡"
+    dataset_config: "datasets/certificates.yaml"
+    metrics_config: "metrics/certificates.yaml"

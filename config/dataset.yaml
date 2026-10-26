@@ -153,6 +153,9 @@ anomaly_rules:
   - id: invalid_id_number
     desc: 证件号码非 18 位，或校验位不合法
     severity: high
+  - id: id_number_length_invalid
+    desc: 证件号码位数不是 18 位（源表录入错误）
+    severity: high
   - id: score_out_of_range
     desc: 分数不在 [0, 100] 区间
     severity: high
@@ -171,3 +174,8 @@ anomaly_rules:
   - id: class_code_unparsable
     desc: 开班编号存在但无法解析出报名日期
     severity: medium
+  # 跨期规则（由 check_cross_period_anomalies 在两期比对时产出）。
+  # 必须在这里声明，否则页面上会退化显示英文 rule_id。
+  - id: exam_status_regressed
+    desc: 考试状态从「已通过」回退为其他状态
+    severity: high

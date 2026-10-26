@@ -11,11 +11,15 @@ sys.path.insert(0, str(ROOT / "src"))
 from bi.settings import load_settings
 from bi.store import FactStore
 
+# 只迁移 7 张事实表。
+# 两类不搬：① 本地实体表（certificates / students / companies）可由
+# scripts/build_entity_tables.py 在新环境重建；② 不搬任何镜像表或视图（库里都没有）。
 TABLES = (
     "upload_versions",
     "raw_records",
     "diff_events",
     "metric_snapshots",
+    "metric_buckets",
     "anomalies",
     "audit_log",
 )

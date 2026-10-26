@@ -15,6 +15,18 @@ def test_dashboard_page_is_available():
     assert "/dashboard/data" in response.text
 
 
+def test_homepage_is_dashboard_and_chat_moved_to_chat():
+    """首页（/）= 业务驾驶舱；对话页移至 /chat。"""
+    home = client.get("/")
+    assert home.status_code == 200
+    assert "云学通 · 业务驾驶舱" in home.text
+    assert "/dashboard/data" in home.text
+
+    chat = client.get("/chat")
+    assert chat.status_code == 200
+    assert "/agent/ask" in chat.text
+
+
 def test_dashboard_data_is_aggregated_and_contains_no_person_identifiers(seeded):
     response = client.get("/dashboard/data")
     assert response.status_code == 200
@@ -40,7 +52,7 @@ def test_dashboard_data_is_aggregated_and_contains_no_person_identifiers(seeded)
         if isinstance(value, dict):
             assert not set(value).intersection({
                 "姓名", "证件号码", "联系电话", "手机", "id_number", "phone",
-                "_identity_key", "id_number_hash",
+                "_identity_key", "id_number_masked",
             })
             for nested in value.values():
                 assert_no_person_identifiers(nested)

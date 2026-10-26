@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f6fa">
+  <title>云学通 · 继续教育人员名单</title>
+  <link rel="stylesheet" href="/assets/dashboard.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="/dashboards">
+        <div class="brand-mark">YT</div>
+        <div><h1>云学通 · 继续教育</h1><p>谁在参训、报了几门、是否缴费、来自哪些单位</p></div>
+      </a>
+      <nav class="nav" aria-label="页面导航">
+        <a href="/dashboard/denggao">登高驾驶舱</a>
+        <a class="active" href="/dashboard/roster">人员名单</a>
+        <a href="/dashboard/course">课程月份</a>
+        <a href="/dashboards">切换项目</a>
+        <a href="/insights">业务洞察</a>
+        <a href="/chat">智能问答</a>
+        <button class="refresh" id="refresh" type="button">刷新数据</button>
+      </nav>
+    </header>
+
+    <div id="loading" class="loading">正在汇总人员名单…</div>
+    <div id="error" class="error" hidden></div>
+    <div id="dashboard" hidden>
+      <section class="intro">
+        <div><h2>人员名单概览</h2><p>继续教育参训人员结构 · 选课广度 · 缴费覆盖</p></div>
+        <div class="period">人员名单 · 最新批次 <strong id="current-batch">—</strong><br>
+          <span id="record-meta">—</span></div>
+      </section>
+      <div class="notice" id="data-notice"></div>
+
+      <div class="kpis" id="kpis"></div>
+      <div class="grid">
+
+        <section class="panel span-5">
+          <div class="panel-head"><div><h3 class="panel-title">缴费覆盖</h3>
+            <div class="panel-sub">缴费情况按名单人数统计</div></div>
+            <span class="panel-kicker" id="payment-kicker">—</span></div>
+          <div class="chart" id="payment-chart"></div>
+          <div class="status-cards" id="payment-stats"></div>
+        </section>
+
+        <section class="panel span-7">
+          <div class="panel-head"><div><h3 class="panel-title">选课广度分布</h3>
+            <div class="panel-sub">每人报名了几门课（课程字段为逗号分隔多选）</div></div>
+            <span class="panel-kicker" id="avg-courses">—</span></div>
+          <div class="chart" id="selection-chart"></div>
+          <div class="heat-note">口径：此处按「一个人报名了几门课」计数，课程多选的人会在多个课程里分别出现，
+            不可直接相加当作人数。</div>
+        </section>
+
+        <section class="panel span-6">
+          <div class="panel-head"><div><h3 class="panel-title">热门课程</h3>
+            <div class="panel-sub">按名单人数统计，一人多选会计入多门课程</div></div>
+            <span class="panel-kicker" id="course-kicker">— 门课程</span></div>
+          <div class="chart" id="course-chart"></div>
+        </section>
+
+        <section class="panel span-6">
+          <div class="panel-head"><div><h3 class="panel-title">参训单位 Top 10</h3>
+            <div class="panel-sub">按工作单位聚合名单人数</div></div>
+            <span class="panel-kicker" id="employer-kicker">— 家单位</span></div>
+          <div class="chart" id="employer-chart"></div>
+        </section>
+
+        <section class="panel span-6">
+          <div class="panel-head"><div><h3 class="panel-title">学历结构</h3>
+            <div class="panel-sub">按名单人数统计</div></div></div>
+          <div class="chart" id="education-chart"></div>
+          <div class="section-label">职称等级</div>
+          <div class="chart" id="title-chart"></div>
+        </section>
+
+        <section class="panel span-6">
+          <div class="panel-head"><div><h3 class="panel-title">关键指标批次趋势</h3>
+            <div class="panel-sub">每张卡片独立刻度；演示批次使用虚线区分</div></div>
+            <span class="panel-kicker" id="trend-count">— 个批次</span></div>
+          <div id="trend-grid" class="kpis" style="grid-template-columns:repeat(2,minmax(0,1fr));margin:0"></div>
+        </section>
+
+        <section class="panel span-7">
+          <div class="panel-head"><div><h3 class="panel-title">数据质量异常</h3>
+            <div class="panel-sub">按当前批次规则计数</div></div>
+            <span class="panel-kicker" id="anomaly-total">— 项</span></div>
+          <div class="chart" id="anomaly-chart"></div>
+        </section>
+        <section class="panel span-5">
+          <div class="panel-head"><div><h3 class="panel-title">异常批次变化</h3>
+            <div class="panel-sub">当前数据集已落库批次</div></div></div>
+          <div class="chart" id="anomaly-trend"></div>
+        </section>
+      </div>
+    </div>
+    <footer>统计结果来自已入库批次；个人标识仅用于服务端去重，不向页面返回。</footer>
+  </main>
+
+  <script src="/assets/dashboard.js"></script>
+  <script>
+    const PROJECT_ID = "roster";
+    const { $, esc, fmt, empty, bars, lineChart, pieLegend, kpiCard, anomalyChart } = BI;
+
+    function metricTrends(trends) {
+      $("trend-count").textContent = `${Math.max(0, ...(trends || []).map(t => t.points.length))} 个批次`;
+      $("trend-grid").innerHTML = (trends || []).map((s, i) => `<div>
+        <div class="kpi-head"><span class="kpi-label">${esc(s.label)}</span>
+          <span style="color:${BI.PALETTE[i % BI.PALETTE.length]};font-weight:700">${esc(s.unit || "")}</span></div>
+        <div class="chart" style="min-height:110px">${lineChart([s], {height: 125})}</div>
+      </div>`).join("") || empty();
+    }
+
+    function render(data) {
+      BI.applyTheme(data.project?.accent, data.project?.accent_soft);
+      $("loading").hidden = true; $("error").hidden = true; $("dashboard").hidden = false;
+      $("current-batch").textContent = data.batch || "暂无数据";
+      $("record-meta").textContent = data.record_count == null ? "尚未入库"
+        : `${fmt(data.record_count)} 人 · 剔除 ${fmt(data.dropped_rows || 0)} 条`;
+
+      const warnings = [];
+      if ((data.kpis || []).length < 5) warnings.push("人员名单的五项指标尚未全部入库。");
+      if (data.batch_count === 1) warnings.push("当前只有一个批次，趋势图仅作结构展示，不代表历史变化。");
+      if (warnings.length) {
+        $("data-notice").textContent = warnings.join(" ");
+        $("data-notice").classList.add("show");
+      }
+
+      const trends = data.trends || [];
+      $("kpis").innerHTML = (data.kpis || [])
+        .map((k, i) => kpiCard(k, trends.find(t => t.key === k.key), i)).join("")
+        || empty("尚无已入库的指标");
+      metricTrends(trends);
+
+      const s = data.summary || {};
+      $("payment-kicker").textContent = `${fmt(data.record_count || 0)} 人`;
+      $("payment-chart").innerHTML = pieLegend(data.payment_status);
+      $("payment-stats").innerHTML = `
+        <div class="status-card"><b>${fmt(s.paid || 0)}</b><div>已缴费人数</div></div>
+        <div class="status-card"><b>${fmt(s.unpaid || 0)}</b><div>未缴费人数</div></div>
+        <div class="status-card"><b>${fmt(s.multi_course || 0)}</b><div>多门课学员数</div></div>
+        <div class="status-card"><b>${fmt(s.titled || 0)}</b><div>有职称人数</div></div>`;
+
+      $("avg-courses").textContent = `人均 ${fmt(data.avg_courses, 2)} 门`;
+      $("selection-chart").innerHTML = bars(data.selection_distribution,
+        {height: 24, limit: 10, colors: ["#21a99a", "#5578f6", "#9078d8", "#e4a044"]});
+
+      $("course-kicker").textContent = `${fmt(data.course_count_total || 0)} 门课程`;
+      $("course-chart").innerHTML = bars(data.courses, {height: 22, limit: 10});
+
+      $("employer-kicker").textContent = `${fmt(data.employer_count || 0)} 家单位`;
+      $("employer-chart").innerHTML = bars(data.employers,
+        {height: 21, limit: 10, colors: ["#21a99a", "#5578f6", "#9078d8"]});
+
+      $("education-chart").innerHTML = bars(data.education, {height: 22, limit: 8});
+      $("title-chart").innerHTML = bars(data.title_level,
+        {height: 22, limit: 8, colors: ["#9078d8", "#5578f6", "#21a99a"]});
+
+      const anomalies = data.anomalies || {};
+      $("anomaly-total").textContent = `${fmt(anomalies.total || 0)} 项`;
+      $("anomaly-chart").innerHTML = anomalyChart(anomalies);
+      $("anomaly-trend").innerHTML = lineChart([{
+        label: "全部异常", unit: "项",
+        points: (anomalies.trend || []).map(x => ({batch: x.batch, value: x.total, is_demo: x.is_demo}))
+      }], {height: 235});
+    }
+
+    async function load() {
+      $("refresh").disabled = true; $("refresh").textContent = "加载中…";
+      try {
+        const response = await fetch(`/dashboard/${PROJECT_ID}/data`, {cache: "no-store"});
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        render(await response.json());
+      } catch (error) {
+        $("loading").hidden = true; $("error").hidden = false;
+        $("error").textContent = `加载失败：${error.message}`;
+      } finally {
+        $("refresh").disabled = false; $("refresh").textContent = "刷新数据";
+      }
+    }
+    $("refresh").addEventListener("click", load);
+    load();
+  </script>
+</body>
+</html>

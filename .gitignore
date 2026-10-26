@@ -11,6 +11,10 @@ venv/
 # 入站原始数据：含姓名 / 证件号 / 手机号等个人信息，严禁入库
 data/inbound/
 
+# 清洗产物（scripts/clean_cert_validity.py 的输出）：仍是含姓名/证件号的完整表，
+# 只是某一列被清洗过，同样严禁入库
+data/cleaned/
+
 # 事实库文件
 data/store/
 *.sqlite3

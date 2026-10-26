@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from .cli import analyze_batch, load_import_sources
+from .cli import analyze_batch, load_import_sources, match_sources_for_batch
 from .config import load_dataset_config
 from .excel_reader import file_fingerprint
 from .ingest import TEMP_PREFIXES, resolve_input_file
@@ -45,29 +45,17 @@ class InboundWatcher:
 
     def _batch_files(self, batch_dir: Path) -> BatchFiles | None:
         sources = load_import_sources(self.settings)
-        source_files = {
-            spec["filename"]: spec["dataset_config"]
-            for spec in sources
-        }
-        present_sources = [
-            (batch_dir / filename, config_path)
-            for filename, config_path in source_files.items()
-            if (batch_dir / filename).is_file()
-        ]
-
-        if present_sources:
-            missing = [
-                filename for filename in source_files
-                if not (batch_dir / filename).is_file()
-            ]
-            if missing:
+        if sources:
+            # 按文件名片段把每份 Excel 独立路由到对应数据集（不再要求所有配置齐备）
+            matched = match_sources_for_batch(batch_dir, sources, require_xlsx=False)
+            if not matched:
                 return None
             pairs = [
                 (
-                    load_dataset_config(self.settings.config_dir / config_path).id,
+                    load_dataset_config(self.settings.config_dir / spec["dataset_config"]).id,
                     path,
                 )
-                for path, config_path in present_sources
+                for spec, path in matched
             ]
         else:
             candidates = [

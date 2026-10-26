@@ -2,24 +2,37 @@
 
 存什么、为什么
 --------------
-五张事实表构成「可追溯的证据链」：
+七张事实表构成「可追溯的证据链」：
 
   upload_versions    每次上传的版本（文件指纹、口径、行数）—— 回答「这份数据是哪来的」
   raw_records        每期每个人的原始记录（含 Excel 物理行号）—— 回答「当时这个人是什么状态」
   diff_events        两期之间的每条差分事件（字段级 from -> to）—— 回答「到底变了什么」
   metric_snapshots   每期的核心指标快照 —— 回答「指标是多少、为什么变」
+  metric_buckets     按维度切分的指标格子 —— 回答「哪个月、报了几门的人多」
   anomalies          数据质量与业务异常 —— 回答「哪里不对劲」
+  audit_log          查询审计流水 —— 回答「谁在什么时候查了什么」
+
+建表结构的单一事实源是 `sql/schema.sql`（本模块只负责写入与查询，不内嵌 DDL）。
 
 隐私设计
 --------
-证件号码默认**不落明文**：只存 sha256 摘要（用于跨期对齐与追溯）+ 掩码（用于展示）。
-需要回明文时走 `BI_STORE_PII_PLAINTEXT=true` 显式开启，属于知情选择而非默认行为。
+证件号码**事实层落明文**（raw_records.id_number / diff_events.id_number）：
+掩码会把不同证件号折叠成同一串（实测 8634 个不同证件号掩码后只剩 7644 个），
+既无法精确统计「持证人数」「一人多证」，也无法把台账与外部源按证件号关联。
+**输出层一律掩码**：API / 看板 / MCP / 证据链只出掩码值，payload_json 里的证件号
+同样是掩码；事实层明文只用于关联、去重与对账。
+
+生产库防护
+----------
+本项目的事实库只能是本地 SQLite 或自有 PostgreSQL。BI_DATABASE_URL 若指向线上生产库
+（Neon 托管域）或与 TRAININGOS_DATABASE_URL 同库，FactStore 在构造时直接拒绝
+（见 _assert_not_source_db）——否则 init_schema() 会在生产库里建表、每次入站都会写入。
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
+import os
 import re
 import sqlite3
 from contextlib import contextmanager
@@ -30,129 +43,43 @@ from typing import Any, Iterator
 
 from .anomaly import Anomaly
 from .diff_engine import EVENT_ADDED, EVENT_CHANGED, EVENT_REMOVED, DiffResult
+from .dsn import parse_dsn
 from .excel_reader import ROW_NUMBER_KEY
 from .ingest import Ingested
 from .settings import Settings, get_settings
 
-SCHEMA = """
-PRAGMA journal_mode=WAL;
-PRAGMA foreign_keys=ON;
+# 建表结构的**单一事实源**：sql/schema.sql。
+# 本模块不再内嵌 DDL —— 改表结构只改那个文件，避免「SQL 文件与 Python 各写一份」导致漂移。
+SCHEMA_PATH = Path(__file__).resolve().parents[2] / "sql" / "schema.sql"
 
--- 上传版本：一次上传 = 一个版本
-CREATE TABLE IF NOT EXISTS upload_versions (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    dataset_id       TEXT    NOT NULL,
-    batch            TEXT    NOT NULL,
-    source_file      TEXT    NOT NULL,
-    filename         TEXT    NOT NULL,
-    sheet            TEXT,
-    sha256           TEXT    NOT NULL,
-    size_bytes       INTEGER,
-    file_modified_at TEXT,
-    captured_at      TEXT    NOT NULL,
-    row_count        INTEGER NOT NULL,
-    record_count     INTEGER NOT NULL,
-    dropped_rows     INTEGER NOT NULL DEFAULT 0,
-    columns_json     TEXT    NOT NULL,
-    notes_json       TEXT,
-    status           TEXT    NOT NULL DEFAULT 'active',
-    UNIQUE (dataset_id, batch)
-);
 
--- 原始记录：每期每人一行
-CREATE TABLE IF NOT EXISTS raw_records (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    version_id      INTEGER NOT NULL REFERENCES upload_versions(id) ON DELETE CASCADE,
-    record_key      TEXT    NOT NULL,
-    id_number_hash  TEXT    NOT NULL,
-    id_number_masked TEXT,
-    id_number_plain TEXT,
-    name            TEXT,
-    source_row      INTEGER,
-    payload_json    TEXT    NOT NULL,
-    UNIQUE (version_id, record_key)
-);
-CREATE INDEX IF NOT EXISTS idx_raw_records_version ON raw_records(version_id);
-CREATE INDEX IF NOT EXISTS idx_raw_records_hash ON raw_records(id_number_hash);
+def _load_schema(path: Path) -> str:
+    if not path.is_file():
+        raise RuntimeError(
+            f"找不到建表脚本：{path}。事实库 DDL 的单一事实源是 sql/schema.sql，请先恢复该文件。"
+        )
+    return path.read_text(encoding="utf-8")
 
--- 差分事件：字段级
-CREATE TABLE IF NOT EXISTS diff_events (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    dataset_id       TEXT    NOT NULL,
-    from_version_id  INTEGER REFERENCES upload_versions(id) ON DELETE CASCADE,
-    to_version_id    INTEGER NOT NULL REFERENCES upload_versions(id) ON DELETE CASCADE,
-    batch_from       TEXT    NOT NULL,
-    batch_to         TEXT    NOT NULL,
-    event_type       TEXT    NOT NULL,
-    record_key       TEXT    NOT NULL,
-    id_number_hash   TEXT,
-    name             TEXT,
-    field_name       TEXT,
-    field_std_name   TEXT,
-    value_from       TEXT,
-    value_to         TEXT,
-    value_from_raw   TEXT,
-    value_to_raw     TEXT,
-    severity         TEXT,
-    source_row_from  INTEGER,
-    source_row_to    INTEGER,
-    created_at       TEXT    NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_diff_events_to ON diff_events(to_version_id);
-CREATE INDEX IF NOT EXISTS idx_diff_events_type ON diff_events(event_type);
-CREATE INDEX IF NOT EXISTS idx_diff_events_key ON diff_events(record_key);
 
--- 指标快照
-CREATE TABLE IF NOT EXISTS metric_snapshots (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    version_id   INTEGER NOT NULL REFERENCES upload_versions(id) ON DELETE CASCADE,
-    batch        TEXT    NOT NULL,
-    metric_key   TEXT    NOT NULL,
-    metric_name  TEXT,
-    value        REAL,
-    unit         TEXT,
-    decimals     INTEGER,
-    descr        TEXT,
-    computed_at  TEXT    NOT NULL,
-    UNIQUE (version_id, metric_key)
-);
+SCHEMA = _load_schema(SCHEMA_PATH)
 
--- 异常
-CREATE TABLE IF NOT EXISTS anomalies (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    version_id   INTEGER REFERENCES upload_versions(id) ON DELETE CASCADE,
-    diff_event_id INTEGER REFERENCES diff_events(id) ON DELETE CASCADE,
-    scope        TEXT    NOT NULL DEFAULT 'row',
-    rule_id      TEXT    NOT NULL,
-    severity     TEXT    NOT NULL,
-    record_key   TEXT,
-    field_name   TEXT,
-    value        TEXT,
-    message      TEXT,
-    created_at   TEXT    NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_anomalies_version ON anomalies(version_id);
 
--- 审计日志（阶段四）
-CREATE TABLE IF NOT EXISTS audit_log (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts           TEXT    NOT NULL,
-    actor        TEXT,
-    tool         TEXT    NOT NULL,
-    params_json  TEXT,
-    result_rows  INTEGER,
-    duration_ms  INTEGER,
-    status       TEXT    NOT NULL,
-    message      TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts);
-"""
+def _strip_sql_comments(script: str) -> str:
+    """去掉 `--` 行注释（DDL 里没有含 `--` 的字符串字面量）。"""
+    return re.sub(r"--[^\n]*", "", script)
 
+
+# PostgreSQL 变体：去掉行注释与 SQLite 专有的 PRAGMA，并把自增主键换成 IDENTITY。
 POSTGRES_SCHEMA = re.sub(
     r"INTEGER PRIMARY KEY AUTOINCREMENT",
     "INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY",
-    SCHEMA.replace("PRAGMA journal_mode=WAL;", "").replace("PRAGMA foreign_keys=ON;", ""),
+    re.sub(r"^\s*PRAGMA\b[^;]*;", "", _strip_sql_comments(SCHEMA), flags=re.MULTILINE),
 )
+
+
+def _split_statements(script: str) -> list[str]:
+    """把 DDL 脚本切成单条语句（先去掉行注释，再按分号切）。"""
+    return [stmt.strip() for stmt in _strip_sql_comments(script).split(";") if stmt.strip()]
 
 
 class _ConnectionAdapter:
@@ -177,15 +104,62 @@ class _ConnectionAdapter:
         self._connection.executescript(script)
 
 
-def hash_id_number(value: str) -> str:
-    return hashlib.sha256(("yt:" + value).encode("utf-8")).hexdigest()
-
-
 def mask_id_number(value: str) -> str:
     s = (value or "").strip()
     if len(s) < 10:
         return "*" * len(s)
     return f"{s[:6]}{'*' * (len(s) - 10)}{s[-4:]}"
+
+
+# 线上生产库连接串的环境变量名 —— 护栏用它判断「事实库是不是就是生产库」
+SOURCE_DB_ENV_KEYS = ("TRAININGOS_DATABASE_URL",)
+
+
+def _canonical_db_target(url: str) -> tuple[str, str, str]:
+    """把连接串拆成 (host, port, dbname)，用于判断「两个连接串是不是同一个库」。
+
+    故意不解析 password：护栏只需要知道连的是哪台机器的哪个库。
+    用 `bi.dsn.parse_dsn`（自带标准库兜底），**不依赖 psycopg 是否安装**——
+    护栏不能因为「驱动没装」就静默失效。
+    """
+    info = parse_dsn(url)
+    host = str(info.get("host", "")).lower()
+    port = str(info.get("port", "") or "5432")
+    dbname = str(info.get("dbname", "")).lower()
+    return (host, port, dbname)
+
+
+def _assert_not_source_db(url: str | None) -> None:
+    """硬护栏：本项目的事实库**绝不能**是线上生产库。
+
+    线上发证库（Neon PG）是另一个系统的库，本项目**不再镜像**它的数据
+    （AGENTS.md 约定 19）。一旦把生产库当成本项目的事实库，init_schema() 就会在
+    线上建表、每次入站都会写入 —— 直接污染生产数据。
+
+    判定故意做**两道**：解析出 host 后比对托管域；若连接串解析不出 host，
+    仍在**原始文本**里搜 Neon 域（宁可误伤也不放过）。
+    """
+    if not url:
+        return
+    host, port, dbname = _canonical_db_target(url)
+    raw = url.lower()
+    if (
+        host.endswith(".neon.tech")
+        or host.endswith(".neon.build")
+        or ".neon.tech" in raw
+        or ".neon.build" in raw
+    ):
+        raise RuntimeError(
+            "BI_DATABASE_URL 指向 Neon（线上生产库托管域）。禁止把生产库当事实库使用，"
+            "请改用本地 SQLite 或自有 PostgreSQL。"
+        )
+    for key in SOURCE_DB_ENV_KEYS:
+        source = (os.environ.get(key) or "").strip()
+        if source and _canonical_db_target(source) == (host, port, dbname):
+            raise RuntimeError(
+                f"BI_DATABASE_URL 与 {key} 指向同一个库：那是线上生产库，禁止当事实库使用"
+                "（AGENTS.md 约定 19）。"
+            )
 
 
 def _now() -> str:
@@ -219,6 +193,7 @@ class FactStore:
     def __init__(self, settings: Settings | None = None, db_path: str | Path | None = None):
         self.settings = settings or get_settings()
         self.database_url = None if db_path is not None else self.settings.database_url
+        _assert_not_source_db(self.database_url)
         self.db_path = Path(db_path) if db_path else self.settings.db_path
         if not self.database_url:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -256,9 +231,8 @@ class FactStore:
     def init_schema(self) -> None:
         with self.connect() as conn:
             if self.database_url:
-                for statement in POSTGRES_SCHEMA.split(";"):
-                    if statement.strip():
-                        conn.execute(statement)
+                for statement in _split_statements(POSTGRES_SCHEMA):
+                    conn.execute(statement)
             else:
                 conn.executescript(SCHEMA)
 
@@ -277,7 +251,6 @@ class FactStore:
         fp = ingested.fingerprint
         id_col = cfg.id_column
         name_col = cfg.name_column
-        pii_plain = self.settings.store_pii_plaintext
         dataset_id = cfg.id
 
         dropped = 0
@@ -337,22 +310,17 @@ class FactStore:
                     else:
                         payload[k] = display_value(v)
                 rows_payload.append((
-                    version_id, parts, hash_id_number(id_number),
-                    mask_id_number(id_number),
-                    id_number if pii_plain else None,
+                    version_id, parts, id_number,
                     str(row.get(name_col) or ""),
                     int(row.get(ROW_NUMBER_KEY, -1)),
                     json.dumps(payload, ensure_ascii=False),
                 ))
             conn.executemany(
                 """INSERT INTO raw_records
-                   (version_id, record_key, id_number_hash, id_number_masked,
-                    id_number_plain, name, source_row, payload_json)
-                   VALUES (?,?,?,?,?,?,?,?)
+                   (version_id, record_key, id_number, name, source_row, payload_json)
+                   VALUES (?,?,?,?,?,?)
                    ON CONFLICT (version_id, record_key) DO UPDATE SET
-                     id_number_hash=excluded.id_number_hash,
-                     id_number_masked=excluded.id_number_masked,
-                     id_number_plain=excluded.id_number_plain,
+                     id_number=excluded.id_number,
                      name=excluded.name,
                      source_row=excluded.source_row,
                      payload_json=excluded.payload_json""",
@@ -365,6 +333,16 @@ class FactStore:
                    VALUES (?,?,?,?,?,?,?,?,?)""",
                 [(version_id, ingested.batch, m.key, m.name, m.value, m.unit, m.decimals, m.desc, _now())
                  for m in ingested.metrics],
+            )
+
+            conn.executemany(
+                """INSERT INTO metric_buckets
+                   (version_id, batch, dataset_id, metric_key, metric_name,
+                    dimension, bucket, group_key, value, unit, descr, computed_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                [(version_id, ingested.batch, dataset_id, b.key, b.name,
+                  b.dimension, b.bucket, b.group_key, b.value, b.unit, b.desc, _now())
+                 for b in ingested.buckets],
             )
 
             conn.executemany(
@@ -394,31 +372,30 @@ class FactStore:
                 p = result.key_parts.get(k, {})
                 payload.append((dataset_id, from_version_id, to_version_id, result.batch_from,
                                 result.batch_to, EVENT_ADDED, k,
-                                hash_id_number(p.get("id_number", "")) if p.get("id_number") else None,
+                                p.get("id_number") or None,
                                 p.get("name", ""), None, None, None, None, None, None,
-                                "info", None, None, _now()))
+                                "info", _now()))
             for k in result.removed:
                 p = result.key_parts.get(k, {})
                 payload.append((dataset_id, from_version_id, to_version_id, result.batch_from,
                                 result.batch_to, EVENT_REMOVED, k,
-                                hash_id_number(p.get("id_number", "")) if p.get("id_number") else None,
+                                p.get("id_number") or None,
                                 p.get("name", ""), None, None, None, None, None, None,
-                                "high", None, None, _now()))
+                                "high", _now()))
             for rc in result.changed:
                 for ch in rc.changes:
                     payload.append((dataset_id, from_version_id, to_version_id, result.batch_from,
                                     result.batch_to, EVENT_CHANGED, rc.key,
-                                    hash_id_number(rc.id_number) if rc.id_number else None,
+                                    rc.id_number or None,
                                     rc.name, ch.field, cfg.standard_name(ch.field),
                                     ch.from_value, ch.to_value, ch.from_display, ch.to_display,
-                                    ch.severity, None, None, _now()))
+                                    ch.severity, _now()))
             conn.executemany(
                 """INSERT INTO diff_events
                    (dataset_id, from_version_id, to_version_id, batch_from, batch_to, event_type,
-                    record_key, id_number_hash, name, field_name, field_std_name,
-                    value_from, value_to, value_from_raw, value_to_raw, severity,
-                    source_row_from, source_row_to, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    record_key, id_number, name, field_name, field_std_name,
+                    value_from, value_to, value_from_raw, value_to_raw, severity, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 payload,
             )
             n = len(payload)
@@ -486,7 +463,7 @@ class FactStore:
 
         with self.connect() as conn:
             rows = conn.execute(
-                """SELECT r.id_number_hash, r.name, r.payload_json
+                """SELECT r.id_number, r.name, r.payload_json
                    FROM raw_records r
                    JOIN upload_versions v ON v.id=r.version_id
                    WHERE v.dataset_id=? AND v.batch=?
@@ -500,7 +477,7 @@ class FactStore:
             course = str(payload.get("课程") or "").strip()
             if not course:
                 continue
-            identity = (str(row["id_number_hash"] or ""), str(row["name"] or ""))
+            identity = (str(row["id_number"] or ""), str(row["name"] or ""))
             learners.setdefault(identity, set()).add(course)
 
         qualifying = [
@@ -521,12 +498,28 @@ class FactStore:
             "learners": qualifying[offset:offset + limit],
         }
 
-    def metric_snapshot(self, batch: str) -> dict[str, dict[str, Any]]:
+    def metric_snapshot(self, batch: str,
+                        dataset_id: str | None = None) -> dict[str, dict[str, Any]]:
+        """某批次的指标快照。
+
+        `dataset_id` 为 None 时按批次汇总（**多数据集同批次会互相覆盖**，
+        例如 20261015 同时有 personnel_roster 与 course_monthly_summary）。
+        调用方若知道数据集，必须显式传入 dataset_id。
+        """
         with self.connect() as conn:
-            rows = conn.execute(
-                """SELECT metric_key, metric_name, value, unit, decimals, descr
-                   FROM metric_snapshots WHERE batch=?""", (batch,)
-            ).fetchall()
+            if dataset_id:
+                rows = conn.execute(
+                    """SELECT m.metric_key, m.metric_name, m.value, m.unit, m.decimals, m.descr
+                       FROM metric_snapshots m
+                       JOIN upload_versions v ON v.id = m.version_id
+                       WHERE m.batch=? AND v.dataset_id=?""",
+                    (batch, dataset_id),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """SELECT metric_key, metric_name, value, unit, decimals, descr
+                       FROM metric_snapshots WHERE batch=?""", (batch,)
+                ).fetchall()
         return {r["metric_key"]: dict(r) for r in rows}
 
     def metric_timeseries(self, metric_key: str,
@@ -550,6 +543,83 @@ class FactStore:
                    WHERE {' AND '.join(where)}
                    ORDER BY m.batch""", params).fetchall()
         return [dict(r) for r in rows]
+
+    # ---------------- 分桶指标 ----------------
+    def metric_buckets(self, batch: str, metric_key: str,
+                       dataset_id: str = "denggao") -> list[dict[str, Any]]:
+        """某批次某分桶指标的全部格子（按维度值、分档排序）。"""
+        with self.connect() as conn:
+            rows = conn.execute(
+                """SELECT m.metric_key, m.metric_name, m.dimension, m.bucket,
+                          m.group_key, m.value, m.unit, m.descr, m.batch
+                   FROM metric_buckets m
+                   WHERE m.batch=? AND m.dataset_id=? AND m.metric_key=?
+                   ORDER BY m.bucket, m.group_key""",
+                (batch, dataset_id, metric_key),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def metric_bucket_matrix(self, batch: str, metric_key: str,
+                             dataset_id: str = "denggao") -> dict[str, Any]:
+        """把分桶格子整理成「维度值 -> 分档 -> 人数」的矩阵，并给出各档合计。
+
+        返回结构便于页面直接画堆叠柱状图：
+          {
+            "metric_key": ..., "name": ..., "unit": ...,
+            "dimension": "月份",
+            "buckets": [
+              {"bucket": "1月", "groups": {"1门": 12, "2门": 3}, "total": 15,
+               "people": 15},
+              ...
+            ],
+            "group_totals": {"1门": 117, "2门": 47, ...},
+            "grand_total": 230,
+          }
+        """
+        rows = self.metric_buckets(batch, metric_key, dataset_id)
+        if not rows:
+            return {"metric_key": metric_key, "metric_name": "", "unit": "",
+                    "dimension": "", "buckets": [], "group_totals": {},
+                    "grand_total": 0}
+
+        by_bucket: dict[str, dict[str, float]] = {}
+        group_totals: dict[str, float] = {}
+        dimension = rows[0]["dimension"]
+        metric_name = rows[0]["metric_name"]
+        unit = rows[0]["unit"] or ""
+        for r in rows:
+            by_bucket.setdefault(r["bucket"], {})[r["group_key"]] = float(r["value"])
+            group_totals[r["group_key"]] = group_totals.get(r["group_key"], 0.0) + float(r["value"])
+
+        buckets = [
+            {
+                "bucket": bucket,
+                "groups": groups,
+                # 合计 = 该月内所有分档人数之和（按「人次」计，同一人跨月会在多个月各计一次）
+                "total": sum(groups.values()),
+            }
+            for bucket, groups in by_bucket.items()
+        ]
+        return {
+            "metric_key": metric_key,
+            # 键名刻意用 metric_name 而非 name —— 避免与个人姓名字段混淆
+            # （PII 审计按 key 名扫描，通用键 "name" 会被误判为泄露）。
+            "metric_name": metric_name,
+            "unit": unit,
+            "dimension": dimension,
+            "buckets": buckets,
+            "group_totals": group_totals,
+            "grand_total": sum(group_totals.values()),
+        }
+
+    def list_bucket_metric_keys(self, dataset_id: str) -> list[str]:
+        """某数据集下已入库的分桶指标 key 列表。"""
+        with self.connect() as conn:
+            rows = conn.execute(
+                """SELECT DISTINCT metric_key FROM metric_buckets
+                   WHERE dataset_id=? ORDER BY metric_key""", (dataset_id,)
+            ).fetchall()
+        return [r["metric_key"] for r in rows]
 
     def anomaly_counts(self, batch: str) -> dict[str, int]:
         with self.connect() as conn:
@@ -658,7 +728,7 @@ class FactStore:
                     "path": _short_path(ver["source_file"]) if ver else None,
                     "file_sha256": ver["sha256"] if ver else None,
                     "source_row": rec["source_row"] if rec else None,
-                    "id_number_masked": rec["id_number_masked"] if rec else None,
+                    "id_number_masked": mask_id_number(rec["id_number"]) if rec else None,
                     "present": rec is not None,
                     "payload": json.loads(rec["payload_json"]) if rec else None,
                 })
@@ -681,6 +751,41 @@ class FactStore:
     def recent_audit(self, limit: int = 50) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+    # ---------------- 定时任务执行记录 ----------------
+    def record_job_run(self, job_id: str, run_date: str, status: str, *,
+                       scheduled_at: str, started_at: str,
+                       finished_at: str | None = None, duration_ms: int | None = None,
+                       result_rows: int | None = None, content_hash: str | None = None,
+                       detail: Any | None = None, trigger: str = "schedule") -> None:
+        """写一条任务执行记录。
+
+        幂等语义：同一个 (job_id, run_date) 只有一行，重跑**覆盖**为最后一次运行，
+        不累加计数、不追加行 —— 跑 1 次和跑 10 次的库内容一致。
+        """
+        with self.connect() as conn:
+            conn.execute(
+                """INSERT INTO job_runs
+                   (job_id, run_date, status, trigger, scheduled_at, started_at,
+                    finished_at, duration_ms, result_rows, content_hash, detail_json)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                   ON CONFLICT (job_id, run_date) DO UPDATE SET
+                     status=excluded.status, trigger=excluded.trigger,
+                     scheduled_at=excluded.scheduled_at, started_at=excluded.started_at,
+                     finished_at=excluded.finished_at, duration_ms=excluded.duration_ms,
+                     result_rows=excluded.result_rows,
+                     content_hash=excluded.content_hash, detail_json=excluded.detail_json""",
+                (job_id, run_date, status, trigger, scheduled_at, started_at,
+                 finished_at, duration_ms, result_rows, content_hash,
+                 json.dumps(detail or {}, ensure_ascii=False, default=str)),
+            )
+
+    def job_runs(self, job_id: str, days: int = 30) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM job_runs WHERE job_id=? ORDER BY run_date DESC LIMIT ?",
+                (job_id, days)).fetchall()
         return [dict(r) for r in rows]
 
 

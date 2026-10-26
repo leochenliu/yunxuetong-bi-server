@@ -19,6 +19,7 @@ RUN python -m pip install --no-cache-dir -r requirements.txt
 
 COPY --chown=app:app src ./src
 COPY --chown=app:app config ./config
+COPY --chown=app:app sql ./sql
 COPY --chown=app:app web ./web
 
 USER app

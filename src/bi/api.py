@@ -20,11 +20,14 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .attribution import attribute_metric
 from .dashboard import dashboard_data
 from .insights import router as insights_router
+from .project_dashboard import build_all_projects, build_project_data
+from .projects import find_project, load_projects, project_page_path
 from .settings import get_settings
 from .store import FactStore
 
@@ -50,6 +53,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 各项目看板共享的设计令牌与图表函数（放在 web/assets 下）
+_ASSETS_DIR = get_settings().project_root / "web" / "assets"
+if _ASSETS_DIR.is_dir():
+    app.mount("/assets", StaticFiles(directory=str(_ASSETS_DIR)), name="assets")
+
 
 def store() -> FactStore:
     return FactStore(get_settings())
@@ -72,14 +80,37 @@ async def _unhandled(request: Request, exc: Exception):  # pragma: no cover
 # --------------------------------------------------------------------------
 @app.get("/health", summary="健康检查")
 def health() -> dict[str, Any]:
+    from .jobs import JOBS, job_health
+
     s = store()
     versions = s.list_versions()
+    jobs = []
+    for job_id in JOBS:
+        try:
+            health_info = job_health(s, job_id, days=7)
+        except Exception:  # 健康检查不能因为一块坏了整体 500
+            continue
+        jobs.append({
+            "job_id": job_id,
+            "healthy": health_info["healthy"],
+            "last_run_date": health_info["last_run_date"],
+            "missing": health_info["missing"],
+            "unhealthy": health_info["unhealthy"],
+            # 从未跑过（新库/首次部署）不算故障；否则只有「最近一个应跑日期缺记录」
+            # 才拉低 status —— 历史缺口请用 /jobs/status 看日历，不该让 /health 长期告警。
+            "never_run": health_info["last_run_date"] is None,
+            "latest_due": health_info["latest_due"],
+            "lagging": health_info["latest_due"] in health_info["missing"],
+        })
+    ran_jobs = [j for j in jobs if not j["never_run"]]
+    healthy = all((not j["lagging"]) and not j["unhealthy"] for j in ran_jobs)
     return {
-        "status": "ok",
+        "status": "ok" if healthy else "degraded",
         "db": s.backend if s.backend == "postgresql" else str(s.db_path),
         "db_backend": s.backend,
         "batches": [v["batch"] for v in versions],
         "records": {v["batch"]: v["record_count"] for v in versions},
+        "jobs": jobs,
     }
 
 
@@ -131,6 +162,40 @@ def course_enrollments(
         t0,
     )
     return result
+
+
+@app.get("/metrics/buckets", summary="分桶指标（按维度切分的分布，如每月报名门数人数）")
+def metric_buckets(
+    dataset_id: str = Query("course_monthly_summary",
+                            description="数据集 id（分桶指标按数据集隔离）"),
+    metric_key: str = Query("monthly_enroll_depth", description="分桶指标 key"),
+    batch: str | None = Query(None, description="批次；省略时使用该数据集最新批次"),
+) -> dict[str, Any]:
+    """返回「维度值 × 分档 -> 人数」的交叉分布。
+
+    例：metric_key=monthly_enroll_depth 返回
+      {"buckets":[{"bucket":"2026年 3月","groups":{"1门":9,"2门":2,...},"total":18}],
+       "group_totals":{"1门":117,...},"grand_total":230}
+    """
+    t0 = time.perf_counter()
+    s = store()
+    if batch is None:
+        versions = s.list_versions(dataset_id)
+        if not versions:
+            raise HTTPException(404, f"数据集没有已入库批次: {dataset_id}")
+        batch = max(v["batch"] for v in versions)
+
+    matrix = s.metric_bucket_matrix(batch, metric_key, dataset_id)
+    if not matrix["buckets"]:
+        raise HTTPException(
+            404,
+            f"该批次没有分桶指标 {metric_key}（数据集 {dataset_id} / 批次 {batch}）；"
+            f"请先运行 python -m bi.cli seed 重新入库",
+        )
+    _audit("metric_buckets",
+           {"dataset_id": dataset_id, "metric_key": metric_key, "batch": batch},
+           len(matrix["buckets"]), t0)
+    return {**matrix, "batch": batch, "dataset_id": dataset_id}
 
 
 @app.get("/metrics/compare", summary="指标对比（含变化归因）")
@@ -251,6 +316,29 @@ def audit(limit: int = Query(50, ge=1, le=MAX_LIMIT)) -> dict[str, Any]:
     return {"items": items, "count": len(items)}
 
 
+@app.get("/jobs/status", summary="定时任务执行状态（漏跑 = 日历里的 missed）")
+def jobs_status(
+    job_id: str | None = Query(None, description="任务 id；省略则返回全部已注册任务"),
+    days: int = Query(14, ge=1, le=90, description="回看天数"),
+) -> dict[str, Any]:
+    from .jobs import JOBS, job_health
+
+    t0 = time.perf_counter()
+    s = store()
+    items = []
+    for jid in ([job_id] if job_id else list(JOBS)):
+        try:
+            items.append(job_health(s, jid, days))
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+    _audit("jobs_status", {"job_id": job_id, "days": days}, len(items), t0)
+    return {
+        "items": items,
+        "count": len(items),
+        "healthy": all(item["healthy"] for item in items),
+    }
+
+
 # --------------------------------------------------------------------------
 # 阶段五：自然语言 Agent
 # --------------------------------------------------------------------------
@@ -271,19 +359,88 @@ def agent_ask(req: AskRequest) -> dict[str, Any]:
     return out
 
 
-@app.get("/", response_class=HTMLResponse, summary="对话页")
-def index() -> HTMLResponse:
-    page = get_settings().project_root / "web" / "index.html"
+def _serve_page(filename: str) -> HTMLResponse:
+    """读取 web/ 下的静态页面；文件缺失时返回 404。"""
+    page = get_settings().project_root / "web" / filename
     if not page.exists():
-        return HTMLResponse("<h1>web/index.html 不存在</h1>", status_code=404)
+        return HTMLResponse(f"<h1>web/{filename} 不存在</h1>", status_code=404)
     return HTMLResponse(page.read_text(encoding="utf-8"))
+
+
+@app.get("/", response_class=HTMLResponse, summary="首页（业务运营驾驶舱）")
+def index() -> HTMLResponse:
+    """站点首页 = 业务运营驾驶舱；对话页（智能问答）移至 /chat。"""
+    return _serve_page("dashboard.html")
 
 
 @app.get("/dashboard", response_class=HTMLResponse, summary="业务运营驾驶舱")
 def dashboard_page() -> HTMLResponse:
-    page = get_settings().project_root / "web" / "dashboard.html"
+    return _serve_page("dashboard.html")
+
+
+@app.get("/chat", response_class=HTMLResponse, summary="对话页（智能问答）")
+def chat_page() -> HTMLResponse:
+    return _serve_page("index.html")
+
+
+# --------------------------------------------------------------------------
+# 阶段三·扩展：按项目分页面看板
+# --------------------------------------------------------------------------
+@app.get("/projects", summary="看板项目清单")
+def projects_list() -> dict[str, Any]:
+    """所有已注册的业务项目（每个项目一张独立看板页面）。"""
+    t0 = time.perf_counter()
+    items = [p.as_dict() for p in load_projects(get_settings())]
+    _audit("projects_list", {}, len(items), t0)
+    return {"items": items, "count": len(items)}
+
+
+@app.get("/dashboard/all/data", summary="所有项目的看板数据")
+def all_projects_dashboard_data() -> dict[str, Any]:
+    """全部项目的数据包（项目总览页用）。"""
+    t0 = time.perf_counter()
+    result = build_all_projects(get_settings())
+    _audit("all_projects_dashboard_data", {}, len(result.get("data", {})), t0)
+    return result
+
+
+@app.get("/dashboard/{project_id}/data", summary="指定项目的看板数据")
+def project_dashboard_data(project_id: str) -> dict[str, Any]:
+    """单个项目的完整看板数据包（KPI / 趋势 / 专属面板 / 异常）。"""
+    t0 = time.perf_counter()
+    settings = get_settings()
+    project = find_project(settings, project_id)
+    if project is None:
+        _audit("project_dashboard_data", {"project_id": project_id}, None, t0,
+               status="error", message="未知项目")
+        raise HTTPException(404, f"未知项目: {project_id}")
+    result = build_project_data(settings, project)
+    _audit("project_dashboard_data", {"project_id": project_id},
+           result.get("record_count"), t0)
+    return result
+
+
+@app.get("/dashboard/{project_id}", response_class=HTMLResponse,
+         summary="按项目区分的看板页面")
+def project_dashboard_page(project_id: str) -> HTMLResponse:
+    """每个项目一张独立页面（布局/配色/KPI 都按项目定制）。"""
+    settings = get_settings()
+    project = find_project(settings, project_id)
+    if project is None:
+        return HTMLResponse(f"<h1>未知项目: {project_id}</h1>", status_code=404)
+    page = project_page_path(settings, project)
     if not page.exists():
-        return HTMLResponse("<h1>web/dashboard.html 不存在</h1>", status_code=404)
+        return HTMLResponse(f"<h1>页面不存在: {project.page}</h1>", status_code=404)
+    return HTMLResponse(page.read_text(encoding="utf-8"))
+
+
+@app.get("/dashboards", response_class=HTMLResponse, summary="项目看板总览（切换入口）")
+def dashboards_index() -> HTMLResponse:
+    """项目切换页：列出所有项目及其入口。"""
+    settings = get_settings()
+    page = settings.project_root / "web" / "dashboards.html"
+    if not page.exists():
+        return HTMLResponse("<h1>web/dashboards.html 不存在</h1>", status_code=404)
     return HTMLResponse(page.read_text(encoding="utf-8"))
 
 

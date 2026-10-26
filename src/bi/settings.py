@@ -56,7 +56,6 @@ class Settings:
     database_url: str | None
     config_dir: Path
     inbound_dir: Path
-    store_pii_plaintext: bool
     api_host: str
     api_port: int
     mcp_max_limit: int
@@ -82,6 +81,15 @@ class Settings:
     def queries_config_path(self) -> Path:
         return self.config_dir / "queries.yaml"
 
+    @property
+    def dashboards_config_path(self) -> Path:
+        return self.config_dir / "dashboards.yaml"
+
+    @property
+    def period_config_path(self) -> Path:
+        """自然时间周期配置（单位：天）。"""
+        return self.config_dir / "period.yaml"
+
 
 def load_settings(env_file: str | Path | None = None) -> Settings:
     _load_dotenv(Path(env_file) if env_file else PROJECT_ROOT / ".env")
@@ -91,7 +99,6 @@ def load_settings(env_file: str | Path | None = None) -> Settings:
         database_url=os.environ.get("BI_DATABASE_URL", "").strip() or None,
         config_dir=_resolve(os.environ.get("BI_CONFIG_DIR", "./config"), root),
         inbound_dir=_resolve(os.environ.get("BI_INBOUND_DIR", "./data/inbound"), root),
-        store_pii_plaintext=_env_bool("BI_STORE_PII_PLAINTEXT", False),
         api_host=os.environ.get("BI_API_HOST", "127.0.0.1"),
         api_port=_env_int("BI_API_PORT", 8787),
         mcp_max_limit=_env_int("BI_MCP_MAX_LIMIT", 200),

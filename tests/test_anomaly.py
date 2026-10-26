@@ -18,20 +18,26 @@ def test_real_data_passed_but_no_score(batches, cfg):
 
 
 def test_detector_catches_injected_bad_rows(batches, cfg):
-    """注入 6 类坏数据 -> 必须全部检出（防止检测器「永远返回 0」）。"""
+    """注入 7 类坏数据 -> 必须全部检出（防止检测器「永远返回 0」）。
+
+    证件号分两类坏法，规则也分两条（修法不同，不能混）：
+    位数不对（`id_number_length_invalid`）与校验位错（`invalid_id_number`）。
+    """
     d1, _ = batches
     bad = copy.deepcopy(d1.dataset)
     bad.rows[0]["分数"] = 999
     bad.rows[1]["考试状态"] = "已通过"; bad.rows[1]["分数"] = 30
     bad.rows[2]["考试状态"] = "已通过"; bad.rows[2]["考试日期"] = None
-    bad.rows[3]["证件号码"] = "12345"
+    bad.rows[3]["证件号码"] = "12345"                       # 位数不对
     bad.rows[4]["是否付款"] = "已付款"; bad.rows[4]["金额"] = 0
     bad.rows[5]["开班编号"] = "9999999999999"
+    bad.rows[6]["证件号码"] = "110101199003074019"          # 18 位但校验位错
 
     found = check_row_anomalies(bad, cfg)
     got = {a.rule_id for a in found}
     for rule in ["score_out_of_range", "passed_but_low_score", "passed_but_no_exam_date",
-                 "invalid_id_number", "paid_but_zero_amount", "class_code_unparsable"]:
+                 "id_number_length_invalid", "invalid_id_number",
+                 "paid_but_zero_amount", "class_code_unparsable"]:
         assert rule in got, f"未检出 {rule}，实际检出 {sorted(got)}"
 
 

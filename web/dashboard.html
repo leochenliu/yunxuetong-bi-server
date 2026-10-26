@@ -106,14 +106,14 @@
 <body>
   <main class="shell">
     <header class="topbar">
-      <a class="brand" href="/dashboard">
+      <a class="brand" href="/">
         <div class="brand-mark">YT</div>
         <div><h1>云学通 · 业务驾驶舱</h1><p>培训运营、课程结构与数据质量</p></div>
       </a>
       <nav class="nav" aria-label="页面导航">
-        <a class="active" href="/dashboard">驾驶舱</a>
+        <a class="active" href="/">驾驶舱</a>
         <a href="/insights">业务洞察</a>
-        <a href="/">智能问答</a>
+        <a href="/chat">智能问答</a>
         <button class="refresh" id="refresh" type="button">刷新数据</button>
       </nav>
     </header>
@@ -137,8 +137,9 @@
           <div id="trend-grid" class="kpis" style="grid-template-columns:repeat(2,minmax(0,1fr));margin:0"></div>
         </section>
         <section class="panel span-5">
-          <div class="panel-head"><div><h3 class="panel-title">报名人数月度趋势</h3>
-            <div class="panel-sub">按当前批次记录中的报名月份归组</div></div></div>
+          <div class="panel-head"><div><h3 class="panel-title" id="enrollment-title">报名人数周期趋势</h3>
+            <div class="panel-sub" id="enrollment-sub">按 config/period.yaml 配置的自然时间周期归组</div></div>
+            <span class="panel-kicker" id="enrollment-period">— 天/期</span></div>
           <div class="chart" id="enrollment-chart"></div>
         </section>
 
@@ -293,7 +294,7 @@
     }
     function enrollmentChart(items) {
       const data=items||[];
-      if(!data.length)return empty("当前批次没有可解析的报名月份");
+      if(!data.length)return empty("当前批次没有可解析的报名日期");
       const w=560,h=235,l=40,r=15,t=15,b=38,pw=w-l-r,ph=h-t-b;
       const max=Math.max(1,...data.map(d=>d.count));
       const grid=[0,1,2,3].map(i=>{
@@ -307,9 +308,9 @@
       ]);
       const path=coords.map((p,i)=>`${i?"L":"M"}${p[0]},${p[1]}`).join(" ");
       const area=`${path} L${coords[coords.length-1][0]},${t+ph} L${coords[0][0]},${t+ph} Z`;
-      const dots=data.map((d,i)=>`<circle cx="${coords[i][0]}" cy="${coords[i][1]}" r="4" fill="#fff" stroke="#5578f6" stroke-width="2"><title>${esc(d.month)}: ${fmt(d.count)} 人</title></circle>`+
-        svgText(coords[i][0],h-12,d.month.slice(2),'text-anchor="middle" fill="#8690a1" font-size="9"')).join("");
-      return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="报名月份趋势">${grid}<path d="${area}" fill="#5578f6" opacity=".08"/><path d="${path}" fill="none" stroke="#5578f6" stroke-width="2.5"/>${dots}</svg>`;
+      const dots=data.map((d,i)=>`<circle cx="${coords[i][0]}" cy="${coords[i][1]}" r="4" fill="#fff" stroke="#5578f6" stroke-width="2"><title>${esc(d.period)} ~ ${esc(d.period_end)}: ${fmt(d.count)} 人</title></circle>`+
+        svgText(coords[i][0],h-12,String(d.period).slice(2),'text-anchor="middle" fill="#8690a1" font-size="9"')).join("");
+      return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="报名周期趋势">${grid}<path d="${area}" fill="#5578f6" opacity=".08"/><path d="${path}" fill="none" stroke="#5578f6" stroke-width="2.5"/>${dots}</svg>`;
     }
     function heatmap(data) {
       if(!data?.months?.length||!data?.courses?.length)return empty();
@@ -361,15 +362,20 @@
       $("current-batch").textContent=g.batch||"暂无数据";
       $("record-meta").textContent=g.record_count==null?"尚未入库":`${fmt(g.record_count)} 条记录 · 剔除 ${fmt(g.dropped_rows||0)} 条`;
       const warnings=[];
+      const period=data.period||{};
       if(g.kpis?.length<5)warnings.push("登高培训的五项核心指标尚未全部入库。");
       if(!c.batch)warnings.push("课程月度汇总数据尚未入库，课程热力图为空。");
       if(c.batch&&c.months?.length)warnings.push(`课程月度数据仅有 ${c.batch} 一个批次，图表呈现当前结构，不代表历史趋势。`);
+      if(g.period_unassigned)warnings.push(`${fmt(g.period_unassigned)} 条记录没有可解析的报名日期，未计入周期分布。`);
       if(warnings.length){$("data-notice").textContent=warnings.join(" ");$("data-notice").classList.add("show")}
       const trends=g.trends||[];
       $("kpis").innerHTML=(g.kpis||[]).map((k,i)=>kpiCard(k,trends.find(t=>t.key===k.key),i)).join("")||empty("尚无已入库的核心指标");
       metricTrends(trends);
 
-      $("enrollment-chart").innerHTML=enrollmentChart(g.enrollment_by_month);
+      $("enrollment-title").textContent=`报名人数${period.label||"周期"}趋势`;
+      $("enrollment-sub").textContent=`按 config/period.yaml 的自然时间周期归组（连续 ${period.days??"—"} ${period.unit_text||"天"}，锚点 ${period.anchor||"—"}）`;
+      $("enrollment-period").textContent=`${period.days??"—"} 天/期`;
+      $("enrollment-chart").innerHTML=enrollmentChart(g.enrollment_by_period);
       $("exam-total").textContent=`${fmt(g.record_count||0)} 人`;
       $("exam-chart").innerHTML=bars(g.exam_status,{height:24,limit:9,showPct:true});
       $("schedule-chart").innerHTML=bars(g.exam_schedule,{height:22,limit:3,colors:["#21a99a","#e4a044"],showPct:true});

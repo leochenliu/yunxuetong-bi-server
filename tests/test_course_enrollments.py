@@ -45,7 +45,7 @@ def course_client(tmp_path, monkeypatch):
         ]
         conn.executemany(
             """INSERT INTO raw_records
-               (version_id, record_key, id_number_hash, name, payload_json)
+               (version_id, record_key, id_number, name, payload_json)
                VALUES (?, ?, ?, ?, ?)""",
             [
                 (
@@ -85,7 +85,7 @@ def test_course_enrollment_api_counts_distinct_courses_and_paginates(course_clie
         "course_count": 3,
         "courses": ["课程丙", "课程乙", "课程甲"],
     }]
-    assert not {"id_number", "id_number_hash", "record_key"} & set(body["learners"][0])
+    assert not {"id_number", "record_key"} & set(body["learners"][0])
     with store.connect() as conn:
         assert conn.execute(
             "SELECT COUNT(*) AS c FROM audit_log WHERE tool='course_enrollments' AND status='ok'"

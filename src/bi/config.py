@@ -6,11 +6,14 @@ YAML 里，本模块只负责把它们读成对象——引擎不硬编码任何
 
 from __future__ import annotations
 
+import datetime as _dt
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+from .cleaning import CleaningRule
 
 
 @dataclass
@@ -33,6 +36,8 @@ class AnomalyRule:
 class DeriveConfig:
     class_code: dict[str, Any] = field(default_factory=dict)
     outputs: list[str] = field(default_factory=list)
+    # 过期日期派生（证书类目用）：{column, start_column, outputs}
+    expiry: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -49,6 +54,8 @@ class DatasetConfig:
     derive: DeriveConfig
     diff_rules: dict[str, Any]
     anomaly_rules: list[AnomalyRule]
+    # 字段清洗规则（配置驱动，引擎只实现通用动作，见 src/bi/cleaning.py）
+    cleaning: list[CleaningRule] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
     # ---------- 便捷访问 ----------
@@ -113,10 +120,32 @@ class MetricDef:
     decimals: int = 0
     desc: str = ""
     column: str | None = None
+    equals: str | None = None
+    not_equals: str | None = None
+    exclude_values: list[str] = field(default_factory=list)
+    split: str | None = None
+    dedupe_columns: list[str] = field(default_factory=list)
+    # --- 分桶指标（agg=count_by_group_depth）---
+    # group_columns:    构成「一个组」的列（通常是 证件号码 + 姓名）
+    # dimension_columns: 维度切分列（通常是 年份 + 月份）
+    # depth_column:     组内计数的列（通常是 课程）
+    # depth_split:      depth_column 的多值分隔符（如 ","）
+    # depth_max_bucket: 从第几门起合并为「N门以上」（默认 5）
+    # dimension_name:   维度在展示时的名字（默认取最后一列）
+    group_columns: list[str] = field(default_factory=list)
+    dimension_columns: list[str] = field(default_factory=list)
+    depth_column: str | None = None
+    depth_split: str | None = None
+    depth_max_bucket: int = 5
+    dimension_name: str | None = None
 
     @property
     def is_row_count(self) -> bool:
         return self.agg == "count_rows"
+
+    @property
+    def is_bucket_metric(self) -> bool:
+        return self.agg == "count_by_group_depth"
 
 
 # ============================================================================
@@ -188,6 +217,108 @@ def _read_yaml(path: Path) -> dict[str, Any]:
         return yaml.safe_load(f) or {}
 
 
+# ============================================================================
+# 自然时间周期（单位：天）
+# ----------------------------------------------------------------------------
+# 「自然时间」在本项目里是一个**配置项**，不是硬编码的自然月：
+#   周期 = 连续 N 天（N = config/period.yaml 的 days）
+#   days=7  -> 一周；days=30 -> 一个自然月
+# 窗口从 anchor 起每 N 天切一刀（固定长度，不是日历月）。
+# ============================================================================
+@dataclass
+class PeriodConfig:
+    """自然时间周期配置。单位固定为「天」。"""
+
+    unit: str = "day"
+    days: int = 30
+    anchor: _dt.date = _dt.date(2025, 1, 1)
+    label: str = ""
+
+    # ---------- 展示 ----------
+    @property
+    def label_text(self) -> str:
+        """展示名：显式配置优先，否则按天数推断（7→周，30→月）。"""
+        if self.label:
+            return self.label
+        return {7: "周", 30: "月"}.get(self.days, f"{self.days}天")
+
+    @property
+    def unit_text(self) -> str:
+        return "天"
+
+    # ---------- 分桶 ----------
+    def bucket_index(self, d: _dt.date) -> int:
+        """日期落在第几个周期（从 anchor 起算，anchor 本身是第 0 期）。"""
+        return (d - self.anchor).days // self.days
+
+    def bucket_start(self, d: _dt.date) -> _dt.date:
+        """周期窗口起始日。"""
+        return self.anchor + _dt.timedelta(days=self.bucket_index(d) * self.days)
+
+    def bucket_end_for(self, start: _dt.date) -> _dt.date:
+        """给定窗口起始日，返回窗口结束日（含）。"""
+        return start + _dt.timedelta(days=self.days - 1)
+
+    def bucket_end(self, d: _dt.date) -> _dt.date:
+        return self.bucket_end_for(self.bucket_start(d))
+
+    def bucket_of(self, d: _dt.date) -> str:
+        """周期标签 = 窗口起始日（YYYY-MM-DD）。"""
+        return self.bucket_start(d).isoformat()
+
+    def window_of(self, d: _dt.date) -> str:
+        """周期窗口的可读形式："2025-01-01 ~ 2025-01-30"。"""
+        start = self.bucket_start(d)
+        return f"{start.isoformat()} ~ {self.bucket_end_for(start).isoformat()}"
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "unit": self.unit,
+            "unit_text": self.unit_text,
+            "days": self.days,
+            "label": self.label_text,
+            "anchor": self.anchor.isoformat(),
+            "example_window": self.window_of(self.anchor),
+            "description": (
+                f"统计周期 = 连续 {self.days} {self.unit_text}"
+                f"（从 {self.anchor.isoformat()} 起每 {self.days} 天切一刀）"
+            ),
+        }
+
+
+def load_period_config(path: str | Path) -> PeriodConfig:
+    """加载自然时间周期配置。文件不存在时返回默认（30 天）。"""
+    p = Path(path)
+    if not p.exists():
+        return PeriodConfig()
+    data = _read_yaml(p)
+    raw = data.get("period", {}) or {}
+
+    unit = str(raw.get("unit", "day")).strip().lower()
+    if unit not in {"day", "天"}:
+        raise ValueError(f"period.unit 只支持「天」(day)：{p}（当前 {unit}）")
+
+    try:
+        days = int(raw.get("days", 30))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"period.days 必须是正整数：{p}") from exc
+    if days <= 0:
+        raise ValueError(f"period.days 必须是正整数：{p}（当前 {days}）")
+
+    anchor_raw = str(raw.get("anchor", "2025-01-01")).strip()
+    try:
+        anchor = _dt.date.fromisoformat(anchor_raw)
+    except ValueError as exc:
+        raise ValueError(f"period.anchor 必须是 YYYY-MM-DD：{p}（当前 {anchor_raw}）") from exc
+
+    return PeriodConfig(
+        unit="day",
+        days=days,
+        anchor=anchor,
+        label=str(raw.get("label", "") or ""),
+    )
+
+
 def load_dataset_config(path: str | Path) -> DatasetConfig:
     path = Path(path)
     data = _read_yaml(path)
@@ -213,11 +344,24 @@ def load_dataset_config(path: str | Path) -> DatasetConfig:
         derive=DeriveConfig(
             class_code=dict(derive_raw.get("class_code", {}) or {}),
             outputs=list(derive_raw.get("outputs", []) or []),
+            expiry=dict(derive_raw.get("expiry", {}) or {}),
         ),
         diff_rules=dict(data.get("diff_rules", {}) or {}),
         anomaly_rules=[
             AnomalyRule(id=str(r.get("id")), desc=str(r.get("desc", "")), severity=str(r.get("severity", "medium")))
             for r in (data.get("anomaly_rules", []) or [])
+        ],
+        cleaning=[
+            CleaningRule(
+                column=str(r["column"]),
+                trim=bool(r.get("trim", True)),
+                full_to_half=bool(r.get("full_to_half", False)),
+                remove_chars=str(r.get("remove_chars", "") or ""),
+                collapse_whitespace=bool(r.get("collapse_whitespace", False)),
+                uppercase=bool(r.get("uppercase", False)),
+                uppercase_x=bool(r.get("uppercase_x", False)),
+            )
+            for r in (data.get("cleaning", []) or [])
         ],
         raw=data,
     )
@@ -236,6 +380,17 @@ def load_metrics_config(path: str | Path) -> list[MetricDef]:
                 decimals=int(m.get("decimals", 0)),
                 desc=str(m.get("desc", "")),
                 column=m.get("column"),
+                equals=(str(m["equals"]) if m.get("equals") is not None else None),
+                not_equals=(str(m["not_equals"]) if m.get("not_equals") is not None else None),
+                exclude_values=[str(v) for v in (m.get("exclude_values") or [])],
+                split=(str(m["split"]) if m.get("split") is not None else None),
+                dedupe_columns=[str(c) for c in (m.get("dedupe_columns") or [])],
+                group_columns=[str(c) for c in (m.get("group_columns") or [])],
+                dimension_columns=[str(c) for c in (m.get("dimension_columns") or [])],
+                depth_column=(str(m["depth_column"]) if m.get("depth_column") is not None else None),
+                depth_split=(str(m["depth_split"]) if m.get("depth_split") is not None else None),
+                depth_max_bucket=int(m.get("depth_max_bucket", 5)),
+                dimension_name=(str(m["dimension_name"]) if m.get("dimension_name") is not None else None),
             )
         )
     if not out:

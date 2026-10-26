@@ -14,7 +14,7 @@ from .config import DatasetConfig, MetricDef, load_dataset_config, load_metrics_
 from .derive import derive
 from .diff_engine import Snapshot, build_snapshot
 from .excel_reader import Dataset, file_fingerprint, read_primary
-from .metrics import MetricValue, compute_metrics
+from .metrics import MetricBucket, MetricValue, compute_bucket_metrics, compute_metrics
 from .settings import Settings, get_settings
 
 TEMP_PREFIXES = ("~$", ".~lock")
@@ -30,6 +30,8 @@ class Ingested:
     fingerprint: dict[str, Any]
     source_file: str
     notes: list[str] = field(default_factory=list)
+    # 分桶指标：需要按维度切分的指标（例：按月 × 报名门数的人数分布）
+    buckets: list[MetricBucket] = field(default_factory=list)
 
     @property
     def row_count(self) -> int:
@@ -76,6 +78,7 @@ def ingest(
     derive(ds, cfg)
     snap = build_snapshot(ds, cfg)
     metric_values = compute_metrics(ds, metrics_defs)
+    bucket_values = compute_bucket_metrics(ds, metrics_defs)
     anomalies = check_row_anomalies(ds, cfg)
 
     return Ingested(
@@ -83,6 +86,7 @@ def ingest(
         dataset=ds,
         snapshot=snap,
         metrics=metric_values,
+        buckets=bucket_values,
         anomalies=anomalies,
         fingerprint=file_fingerprint(path),
         source_file=str(path),

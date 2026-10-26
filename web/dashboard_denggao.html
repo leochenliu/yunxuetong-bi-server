@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f6fa">
+  <title>云学通 · 登高培训驾驶舱</title>
+  <link rel="stylesheet" href="/assets/dashboard.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="/dashboards">
+        <div class="brand-mark">YT</div>
+        <div><h1>云学通 · 登高培训</h1><p>报名 · 考试 · 成绩 · 结算 全流程运营</p></div>
+      </a>
+      <nav class="nav" aria-label="页面导航">
+        <a class="active" href="/dashboard/denggao">登高驾驶舱</a>
+        <a href="/dashboard/roster">人员名单</a>
+        <a href="/dashboard/course">课程月份</a>
+        <a href="/dashboards">切换项目</a>
+        <a href="/insights">业务洞察</a>
+        <a href="/chat">智能问答</a>
+        <button class="refresh" id="refresh" type="button">刷新数据</button>
+      </nav>
+    </header>
+
+    <div id="loading" class="loading">正在汇总业务数据…</div>
+    <div id="error" class="error" hidden></div>
+    <div id="dashboard" hidden>
+      <section class="intro">
+        <div><h2>经营概览</h2><p>用真实批次数据追踪规模、进度、结果与风险</p></div>
+        <div class="period">登高培训 · 最新批次 <strong id="current-batch">—</strong><br>
+          <span id="record-meta">—</span></div>
+      </section>
+      <div class="notice" id="data-notice"></div>
+
+      <div class="kpis" id="kpis"></div>
+      <div class="grid">
+        <section class="panel span-7">
+          <div class="panel-head"><div><h3 class="panel-title">核心指标批次趋势</h3>
+            <div class="panel-sub">每张卡片独立刻度；演示批次使用虚线区分</div></div>
+            <span class="panel-kicker" id="trend-count">— 个批次</span></div>
+          <div id="trend-grid" class="kpis" style="grid-template-columns:repeat(2,minmax(0,1fr));margin:0"></div>
+        </section>
+        <section class="panel span-5">
+          <div class="panel-head"><div><h3 class="panel-title" id="enrollment-title">报名人数周期趋势</h3>
+            <div class="panel-sub" id="enrollment-sub">按 config/period.yaml 配置的自然时间周期归组</div></div>
+            <span class="panel-kicker" id="enrollment-period">— 天/期</span></div>
+          <div class="chart" id="enrollment-chart"></div>
+        </section>
+
+        <section class="panel span-6">
+          <div class="panel-head"><div><h3 class="panel-title">考试状态分布</h3>
+            <div class="panel-sub">当前批次人数，不将状态推断为阶段转化率</div></div>
+            <span class="panel-kicker" id="exam-total">— 人</span></div>
+          <div class="chart" id="exam-chart"></div>
+          <div class="section-label">考试日期记录</div>
+          <div class="chart" id="schedule-chart"></div>
+        </section>
+        <section class="panel span-6">
+          <div class="panel-head"><div><h3 class="panel-title">成绩区间分布</h3>
+            <div class="panel-sub">按 0–100 分区间；越界分数单独提示</div></div>
+            <span class="panel-kicker" id="score-count">— 有分数</span></div>
+          <div class="chart" id="score-chart"></div>
+        </section>
+
+        <section class="panel span-5">
+          <div class="panel-head"><div><h3 class="panel-title">缴费与开票状态</h3>
+            <div class="panel-sub">分布占当前批次记录数；金额为记录金额合计</div></div></div>
+          <div class="chart" id="payment-chart"></div>
+          <div class="section-label">发票状态</div>
+          <div class="chart" id="invoice-chart"></div>
+          <div class="status-cards" id="finance-stats"></div>
+          <div class="panel-sub" id="amount-note" style="margin-top:10px"></div>
+        </section>
+        <section class="panel span-7">
+          <div class="panel-head"><div><h3 class="panel-title">培训签到与补考情况</h3>
+            <div class="panel-sub">培训第一天、第二天签到状态和补考次数记录</div></div></div>
+          <div class="grid" style="gap:12px">
+            <div class="span-6"><div class="panel-sub">签到情况</div>
+              <div class="chart" id="attendance-chart"></div></div>
+            <div class="span-6"><div class="panel-sub">补考次数</div>
+              <div class="chart" id="retry-chart"></div></div>
+          </div>
+        </section>
+
+        <section class="panel span-7">
+          <div class="panel-head"><div><h3 class="panel-title">数据质量异常</h3>
+            <div class="panel-sub">按当前批次规则计数；异常明细仍通过现有证据查询</div></div>
+            <span class="panel-kicker" id="anomaly-total">— 项</span></div>
+          <div class="chart" id="anomaly-chart"></div>
+        </section>
+        <section class="panel span-5">
+          <div class="panel-head"><div><h3 class="panel-title">异常批次变化</h3>
+            <div class="panel-sub">当前数据集已落库批次</div></div></div>
+          <div class="chart" id="anomaly-trend"></div>
+        </section>
+      </div>
+    </div>
+    <footer>统计结果来自已入库批次；个人标识仅用于服务端去重，不向页面返回。</footer>
+  </main>
+
+  <script src="/assets/dashboard.js"></script>
+  <script>
+    const PROJECT_ID = "denggao";
+    const { $, esc, fmt, empty, bars, lineChart, pieLegend, areaChart, kpiCard, anomalyChart } = BI;
+
+    function metricTrends(trends) {
+      $("trend-count").textContent = `${Math.max(0, ...(trends || []).map(t => t.points.length))} 个批次`;
+      $("trend-grid").innerHTML = (trends || []).map((s, i) => `<div>
+        <div class="kpi-head"><span class="kpi-label">${esc(s.label)}</span>
+          <span style="color:${BI.PALETTE[i % BI.PALETTE.length]};font-weight:700">${esc(s.unit || "")}</span></div>
+        <div class="chart" style="min-height:110px">${lineChart([s], {height: 125})}</div>
+      </div>`).join("") || empty();
+    }
+
+    function render(data) {
+      BI.applyTheme(data.project?.accent, data.project?.accent_soft);
+      $("loading").hidden = true; $("error").hidden = true; $("dashboard").hidden = false;
+      $("current-batch").textContent = data.batch || "暂无数据";
+      $("record-meta").textContent = data.record_count == null ? "尚未入库"
+        : `${fmt(data.record_count)} 条记录 · 剔除 ${fmt(data.dropped_rows || 0)} 条`;
+
+      const warnings = [];
+      if ((data.kpis || []).length < 5) warnings.push("登高培训的五项核心指标尚未全部入库。");
+      if (data.batch_count === 1) warnings.push("当前只有一个批次，趋势图仅作结构展示。");
+      if (warnings.length) {
+        $("data-notice").textContent = warnings.join(" ");
+        $("data-notice").classList.add("show");
+      }
+
+      const trends = data.trends || [];
+      $("kpis").innerHTML = (data.kpis || [])
+        .map((k, i) => kpiCard(k, trends.find(t => t.key === k.key), i)).join("")
+        || empty("尚无已入库的核心指标");
+      metricTrends(trends);
+
+      const period = data.period || {};
+      $("enrollment-title").textContent = `报名人数${period.label || "周期"}趋势`;
+      $("enrollment-sub").textContent =
+        `按 config/period.yaml 的自然时间周期归组（连续 ${period.days ?? "—"} ${period.unit_text || "天"}，锚点 ${period.anchor || "—"}）`;
+      $("enrollment-period").textContent = `${period.days ?? "—"} 天/期`;
+      $("enrollment-chart").innerHTML = areaChart(data.enrollment_by_period,
+        {labelKey: "period", accent: data.project?.accent});
+      $("exam-total").textContent = `${fmt(data.record_count || 0)} 人`;
+      $("exam-chart").innerHTML = bars(data.exam_status, {height: 24, limit: 9, showPct: true});
+      $("schedule-chart").innerHTML = bars(data.exam_schedule,
+        {height: 22, limit: 3, colors: ["#21a99a", "#e4a044"], showPct: true});
+      const scored = (data.score_bands || []).filter(x => x.label !== "无分数")
+        .reduce((s, x) => s + x.count, 0);
+      $("score-count").textContent = `${fmt(scored)} 有分数`;
+      $("score-chart").innerHTML = bars(data.score_bands,
+        {height: 24, limit: 9,
+         colors: ["#e4a044", "#5578f6", "#21a99a", "#21a99a", "#4ea980", "#e56b70", "#b9c0cd"]});
+      $("payment-chart").innerHTML = pieLegend(data.payment_status);
+      $("invoice-chart").innerHTML = bars(data.invoice_status,
+        {height: 22, limit: 4, colors: ["#21a99a", "#e4a044", "#b9c0cd"], showPct: true});
+      const paid = (data.payment_status || []).find(x => x.label === "已付款")?.count || 0;
+      const invoiced = (data.invoice_status || []).find(x => x.label === "已开票")?.count || 0;
+      $("finance-stats").innerHTML = `
+        <div class="status-card"><b>${fmt(paid)}</b><div>已付款人数</div></div>
+        <div class="status-card"><b>${fmt(invoiced)}</b><div>已开票人数</div></div>
+        <div class="status-card"><b>${fmt(data.reported_amount?.value || 0)} 元</b>
+          <div>记录金额合计 · 待核口径</div></div>
+        <div class="status-card"><b>${fmt(data.deferred_cert_count || 0)}</b>
+          <div>延期换证人数</div></div>`;
+      $("amount-note").textContent = data.reported_amount?.note || "金额未入库";
+
+      const att = (data.attendance || []).flatMap(day =>
+        day.values.filter(v => v.label !== "未填写").map(v => ({label: `${day.label} · ${v.label}`, count: v.count})));
+      $("attendance-chart").innerHTML = bars(att,
+        {height: 23, limit: 8, colors: ["#21a99a", "#e4a044", "#e56b70", "#9078d8"]});
+      $("retry-chart").innerHTML = bars(data.retry_distribution,
+        {height: 23, limit: 6, colors: ["#5578f6", "#e4a044", "#e56b70"]});
+
+      const anomalies = data.anomalies || {};
+      $("anomaly-total").textContent = `${fmt(anomalies.total || 0)} 项`;
+      $("anomaly-chart").innerHTML = anomalyChart(anomalies);
+      $("anomaly-trend").innerHTML = lineChart([{
+        label: "全部异常", unit: "项",
+        points: (anomalies.trend || []).map(x => ({batch: x.batch, value: x.total, is_demo: x.is_demo}))
+      }], {height: 235});
+    }
+
+    async function load() {
+      $("refresh").disabled = true; $("refresh").textContent = "加载中…";
+      try {
+        const response = await fetch(`/dashboard/${PROJECT_ID}/data`, {cache: "no-store"});
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        render(await response.json());
+      } catch (error) {
+        $("loading").hidden = true; $("error").hidden = false;
+        $("error").textContent = `驾驶舱加载失败：${error.message}`;
+      } finally {
+        $("refresh").disabled = false; $("refresh").textContent = "刷新数据";
+      }
+    }
+    $("refresh").addEventListener("click", load);
+    load();
+  </script>
+</body>
+</html>

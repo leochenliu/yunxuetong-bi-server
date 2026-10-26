@@ -6,7 +6,8 @@ import json
 from collections import Counter, defaultdict
 from typing import Any
 
-from .config import load_metrics_config
+from .config import load_metrics_config, load_period_config
+from .period import group_by_period
 from .settings import Settings
 from .store import FactStore
 from .values import to_number
@@ -179,6 +180,7 @@ def _denggao_data(
     store: FactStore,
     settings: Settings,
     versions: list[dict[str, Any]],
+    period=None,
 ) -> dict[str, Any]:
     latest = _latest(versions)
     if latest is None:
@@ -209,6 +211,14 @@ def _denggao_data(
         }
         for month, count in sorted(enrollment.items())
     ]
+
+    # 自然时间周期口径（config/period.yaml，单位：天）——页面上的「按周期」分布
+    enrollment_by_period: list[dict[str, Any]] = []
+    period_unassigned = 0
+    if period is not None:
+        enrollment_by_period, period_unassigned = group_by_period(
+            rows, "报名日期", period, status_field="考试状态"
+        )
 
     scores = [score for row in rows if (score := _number(row.get("分数"))) is not None]
     score_bands = [
@@ -246,6 +256,8 @@ def _denggao_data(
         "kpis": kpis,
         "trends": trends,
         "enrollment_by_month": enrollment_by_month,
+        "enrollment_by_period": enrollment_by_period,
+        "period_unassigned": period_unassigned,
         "exam_status": _count_values(rows, "考试状态"),
         "exam_schedule": [
             {
@@ -373,12 +385,14 @@ def _course_monthly_data(
 
 def dashboard_data(settings: Settings) -> dict[str, Any]:
     store = FactStore(settings)
+    period = load_period_config(settings.period_config_path)
     denggao_versions = store.list_versions(DENGGAO)
     roster_versions = store.list_versions(ROSTER)
     course_versions = store.list_versions(COURSE_MONTHLY)
     return {
+        "period": period.as_dict(),
         "datasets": {
-            DENGGAO: _denggao_data(store, settings, denggao_versions),
+            DENGGAO: _denggao_data(store, settings, denggao_versions, period),
             ROSTER: _roster_data(store, roster_versions),
             COURSE_MONTHLY: _course_monthly_data(store, course_versions),
         },

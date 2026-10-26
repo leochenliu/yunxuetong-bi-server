@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f6fa">
+  <title>云学通 · 业务看板总览</title>
+  <link rel="stylesheet" href="/assets/dashboard.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="/dashboards">
+        <div class="brand-mark">YT</div>
+        <div><h1>云学通 · 业务看板</h1><p>按培训项目分别设计，每个项目一张独立页面</p></div>
+      </a>
+      <nav class="nav" aria-label="页面导航">
+        <a class="active" href="/dashboards">项目总览</a>
+        <a href="/insights">业务洞察</a>
+        <a href="/chat">智能问答</a>
+        <button class="refresh" id="refresh" type="button">刷新数据</button>
+      </nav>
+    </header>
+
+    <div id="loading" class="loading">正在加载项目清单…</div>
+    <div id="error" class="error" hidden></div>
+    <div id="dashboard" hidden>
+      <section class="intro">
+        <div><h2>选择业务项目</h2>
+          <p>每个项目的数据口径、核心指标与页面结构都独立设计，互不干扰</p></div>
+        <div class="period">已注册项目 <strong id="project-count">—</strong></div>
+      </section>
+      <div class="notice" id="data-notice"></div>
+      <div class="proj-grid" id="project-grid"></div>
+    </div>
+    <footer>统计结果来自已入库批次；个人标识仅用于服务端去重，不向页面返回。</footer>
+  </main>
+
+  <script src="/assets/dashboard.js"></script>
+  <script>
+    const { $, esc, fmt, empty } = BI;
+
+    function render(payload) {
+      $("loading").hidden = true; $("error").hidden = true; $("dashboard").hidden = false;
+      const projects = payload.projects || [];
+      const data = payload.data || {};
+      $("project-count").textContent = `${projects.length} 个`;
+
+      const emptyProjects = projects.filter(p => !data[p.id]?.batch);
+      if (emptyProjects.length) {
+        $("data-notice").textContent =
+          `以下项目尚未入库任何批次：${emptyProjects.map(p => p.title).join("、")}。`
+          + `请把对应 Excel 放入 data/inbound/<批次>/ 后运行 python -m bi.cli seed。`;
+        $("data-notice").classList.add("show");
+      }
+
+      $("project-grid").innerHTML = projects.map(p => {
+        const d = data[p.id] || {};
+        const kpi = (d.kpis || [])[0];
+        const tags = [];
+        if (d.batch) tags.push(`最新批次 ${d.batch}`);
+        if (d.record_count != null) tags.push(`${fmt(d.record_count)} 条记录`);
+        if (d.batch_count) tags.push(`${d.batch_count} 个批次`);
+        if (kpi) tags.push(`${kpi.label} ${fmt(kpi.value, kpi.decimals)}${kpi.unit || ""}`);
+        return `<a class="proj-card" style="--pc:${esc(p.accent)}" href="/dashboard/${esc(p.id)}">
+          <h3>${esc(p.title)}</h3>
+          <p>${esc(p.subtitle)}</p>
+          <div class="proj-meta">${tags.map(t => `<span class="proj-tag">${esc(t)}</span>`).join("")}</div>
+          <div class="go">进入看板 →</div>
+        </a>`;
+      }).join("") || empty("尚未注册任何项目");
+    }
+
+    async function load() {
+      $("refresh").disabled = true; $("refresh").textContent = "加载中…";
+      try {
+        const response = await fetch("/dashboard/all/data", {cache: "no-store"});
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        render(await response.json());
+      } catch (error) {
+        $("loading").hidden = true; $("error").hidden = false;
+        $("error").textContent = `加载失败：${error.message}`;
+      } finally {
+        $("refresh").disabled = false; $("refresh").textContent = "刷新数据";
+      }
+    }
+    $("refresh").addEventListener("click", load);
+    load();
+  </script>
+</body>
+</html>

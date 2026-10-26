@@ -1,0 +1,80 @@
+# ============================================================================
+# 看板项目注册表：每个培训项目一张独立页面。
+#
+# 「项目」的边界 = 一个 dataset_id（见 config/import_sources.yaml 的路由结果）。
+# 每个项目声明：
+#   - dataset_config / metrics_config：这个项目用哪份业务契约与指标口径
+#   - kpi_metrics：顶部 KPI 卡片取哪些指标（必须是该项目的指标 key）
+#   - page：对应的页面文件（web/ 下）
+#   - accent：主题色（每个项目一个主色，页面整体配色随之变化）
+#
+# 新增项目：① 在 import_sources.yaml 加路由 ② 写 config/datasets/<id>.yaml
+#          与 config/metrics/<id>.yaml ③ 在本文件加一条 ④ 写 web/dashboard_<id>.html
+# ============================================================================
+
+projects:
+  - id: denggao
+    dataset_id: denggao
+    title: 登高培训
+    subtitle: 报名 · 考试 · 成绩 · 结算 全流程运营
+    dataset_config: dataset.yaml
+    metrics_config: metrics.yaml
+    page: dashboard_denggao.html
+    accent: "#5578f6"
+    accent_soft: "#eef1fe"
+    kpi_metrics:
+      - enrolled_total
+      - exam_scheduled
+      - exam_passed
+      - avg_score
+      - paid_count
+
+  - id: roster
+    dataset_id: personnel_roster
+    title: 继续教育 · 人员名单
+    subtitle: 谁在参训、报了几门、是否缴费、来自哪些单位
+    dataset_config: datasets/personnel_roster.yaml
+    metrics_config: metrics/personnel_roster.yaml
+    page: dashboard_roster.html
+    accent: "#21a99a"
+    accent_soft: "#e8f7f5"
+    kpi_metrics:
+      - roster_total
+      - paid_total
+      - unpaid_total
+      - employer_count
+      - titled_total
+
+  - id: course
+    dataset_id: course_monthly_summary
+    title: 继续教育 · 课程月份
+    subtitle: 课程 × 月份的人次结构与缴费覆盖
+    dataset_config: datasets/course_monthly_summary.yaml
+    metrics_config: metrics/course_monthly_summary.yaml
+    page: dashboard_course.html
+    accent: "#e4a044"
+    accent_soft: "#fdf3e5"
+    kpi_metrics:
+      - detail_rows
+      - learner_total
+      - paid_rows
+      - course_count
+      - month_count
+
+  # 证书台账（新的统计类目）：核心口径是过期日期
+  - id: certificates
+    dataset_id: certificates
+    title: 证书台账 · 小黄卡
+    subtitle: 持证人结构与过期日期 · 续证倒计时
+    dataset_config: datasets/certificates.yaml
+    metrics_config: metrics/certificates.yaml
+    page: dashboard_certificates.html
+    accent: "#c0567a"
+    accent_soft: "#fbeef3"
+    kpi_metrics:
+      - cert_total
+      - cert_holders
+      - cert_company_count
+      - cert_expiry_known
+      - cert_expiry_from_face
+      - cert_avg_validity_days

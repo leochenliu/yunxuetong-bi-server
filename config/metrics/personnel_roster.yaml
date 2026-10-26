@@ -1,7 +1,51 @@
+# ============================================================================
+# 继续教育 · 培训人员名单（personnel_roster）指标口径
+#
+# 数据形态（与登高完全不同，没有考试/分数/签到字段）：
+#   一行 = 一个人一整条名单记录，课程字段是逗号分隔的多选。
+# 因此这里的指标围绕「人、缴费、覆盖单位、职称」四个业务面设计。
+# ============================================================================
+
 metrics:
-  - key: record_count
-    name: 名单记录数
-    agg: count_rows
-    unit: 条
+  - key: roster_total
+    name: 名单人数
+    unit: 人
     decimals: 0
-    desc: 有证件号码的名单记录数
+    desc: 计入统计的名单人数（只含有证件号码者）
+    agg: count_rows
+
+  - key: paid_total
+    name: 已缴费人数
+    unit: 人
+    decimals: 0
+    desc: 缴费情况 = 已缴费 的人数
+    agg: count_equals
+    column: 缴费情况
+    equals: 已缴费
+
+  - key: unpaid_total
+    name: 未缴费人数
+    unit: 人
+    decimals: 0
+    desc: 缴费情况有值但不是「已缴费」的人数（如「/」等占位；空值不计入）
+    agg: count_equals
+    column: 缴费情况
+    not_equals: 已缴费
+
+  - key: employer_count
+    name: 覆盖单位数
+    unit: 家
+    decimals: 0
+    desc: 工作单位去重后的数量
+    agg: count_distinct
+    column: 工作单位
+
+  - key: titled_total
+    name: 有职称人数
+    unit: 人
+    decimals: 0
+    desc: 职称等级既不为空、也不为「无」的人数（有职称的粗筛口径）
+    agg: count_equals
+    column: 职称等级
+    not_equals: 无
+    exclude_values: ["无", ""]

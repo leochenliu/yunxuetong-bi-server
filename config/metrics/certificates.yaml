@@ -1,0 +1,82 @@
+# ============================================================================
+# 证书台账（小黄卡）指标口径
+# ----------------------------------------------------------------------------
+# 只放**与时间无关的静态口径**。「还有多少天到期」「已过期多少人」这类
+# 随当前日期变化的指标不入库（入库即过时），由看板/API 按当天现算。
+# ============================================================================
+
+metrics:
+  - key: cert_total
+    name: 证书总数
+    agg: count_rows
+    unit: 张
+    decimals: 0
+    desc: 台账行数，一行一张证
+
+  - key: cert_holders
+    name: 持证人数
+    agg: count_distinct
+    column: 身份证号码
+    unit: 人
+    decimals: 0
+    desc: 按身份证号码去重（一人多证只算一人）
+
+  - key: cert_company_count
+    name: 涉及公司数
+    agg: count_distinct
+    column: 公司名称
+    unit: 家
+    decimals: 0
+
+  - key: cert_expiry_known
+    name: 过期日期可确定
+    agg: count_equals
+    column: 过期日期
+    exclude_values: [""]
+    unit: 张
+    decimals: 0
+    desc: 能解析出过期日期的证书（含按月末估计的那部分）
+
+  - key: cert_expiry_exact
+    name: 精确到期日
+    agg: count_equals
+    column: 过期日期精度
+    equals: 日
+    unit: 张
+    decimals: 0
+    desc: 过期日期精确到日
+
+  - key: cert_expiry_estimated
+    name: 估计到期日
+    agg: count_equals
+    column: 过期日期精度
+    equals: 月
+    unit: 张
+    decimals: 0
+    desc: 原始值只有年月，按月末取值
+
+  - key: cert_expiry_from_face
+    name: 证面原文到期日
+    agg: count_equals
+    column: 日期来源
+    equals: 证面原文
+    unit: 张
+    decimals: 0
+    desc: 过期日期取自证书证面（可直接用于续证提醒）
+
+  - key: cert_expiry_derived
+    name: 推算到期日
+    agg: count_equals
+    column: 日期来源
+    equals: 按2年效期推算
+    unit: 张
+    decimals: 0
+    desc: 过期日期由开始日期 + 2 年推算，续证前需回证面核对
+
+  - key: cert_avg_validity_days
+    name: 平均有效期
+    agg: avg
+    column: 有效期天数
+    unit: 天
+    decimals: 0
+    desc: 过期日期与开始日期之间的天数（仅统计两端都能解析的行）

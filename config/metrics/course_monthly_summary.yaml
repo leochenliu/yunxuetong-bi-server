@@ -1,7 +1,71 @@
+# ============================================================================
+# 继续教育 · 按课程月份汇总（course_monthly_summary）指标口径
+#
+# 数据形态：**一人一课程一月份一行**（明细人次口径，不是去重人数）。
+#   例：赵健 报了 2 门课 → 在表中占 2 行；同一人同月不同课也是 2 行。
+# 因此「明细行数」与「去重人数」必须分开看，页面提示也要写清楚。
+# ============================================================================
+
 metrics:
-  - key: record_count
+  - key: detail_rows
     name: 汇总明细行数
-    agg: count_rows
     unit: 行
     decimals: 0
-    desc: 有证件号码的课程月份汇总明细行数
+    desc: 课程月份汇总表的明细行数（人次口径，跨课程/月份不可直接相加当人数）
+    agg: count_rows
+
+  - key: learner_total
+    name: 去重学员数
+    unit: 人
+    decimals: 0
+    desc: 按「证件号码 + 姓名」去重后的学员数
+    agg: count_distinct_multi
+    dedupe_columns: [证件号码, 姓名]
+
+  - key: paid_rows
+    name: 已缴费明细行
+    unit: 行
+    decimals: 0
+    desc: 缴费情况 = 已缴费 的明细行数
+    agg: count_equals
+    column: 缴费情况
+    equals: 已缴费
+
+  - key: course_count
+    name: 开设课程数
+    unit: 门
+    decimals: 0
+    desc: 课程字段去重后的数量
+    agg: count_distinct
+    column: 课程
+
+  - key: month_count
+    name: 覆盖月份数
+    unit: 个
+    decimals: 0
+    desc: 月份字段去重后的数量
+    agg: count_distinct
+    column: 月份
+
+  # ---------------------------------------------------------------------------
+  # 分桶指标：按月 × 报名门数的人数分布
+  # ---------------------------------------------------------------------------
+  # 业务问题：「每月分别有多少人报了 1 门 / 2 门 / 3 门 / 4 门课？」
+  # 口径说明（务必读）：
+  #   - 分组键 = 证件号码 + 姓名 + 年份 + 月份，即「某人在某个自然月」为一组；
+  #   - 组内按「课程」字段去重计数（该表是一人一课程一月份一行，故天然无重复）；
+  #   - 人数 = 该月内报名门数恰为 N 门课的**人数**（去重后的人数，不是人次）；
+  #   - 同一人若在 3 月报 2 门、6 月报 1 门，则 3 月计入「2门」、6 月计入「1门」，
+  #     两个月各计一次 —— 这是「按自然月」口径，与「全期报N门」口径不同；
+  #   - 5 门及以上合并为「5门以上」档。
+  - key: monthly_enroll_depth
+    name: 月度报名门数分布
+    unit: 人
+    decimals: 0
+    desc: 按自然月统计各报名门数的人数（同一人跨月会在每个月各计一次）
+    agg: count_by_group_depth
+    group_columns: [证件号码, 姓名]
+    dimension_columns: [年份, 月份]
+    depth_column: 课程
+    depth_max_bucket: 5
+    dimension_name: 月份

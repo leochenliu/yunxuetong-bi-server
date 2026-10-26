@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f6fa">
+  <title>云学通 · 继续教育课程月份</title>
+  <link rel="stylesheet" href="/assets/dashboard.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="/dashboards">
+        <div class="brand-mark">YT</div>
+        <div><h1>云学通 · 继续教育</h1><p>课程 × 月份的人次结构与缴费覆盖</p></div>
+      </a>
+      <nav class="nav" aria-label="页面导航">
+        <a href="/dashboard/denggao">登高驾驶舱</a>
+        <a href="/dashboard/roster">人员名单</a>
+        <a class="active" href="/dashboard/course">课程月份</a>
+        <a href="/dashboards">切换项目</a>
+        <a href="/insights">业务洞察</a>
+        <a href="/chat">智能问答</a>
+        <button class="refresh" id="refresh" type="button">刷新数据</button>
+      </nav>
+    </header>
+
+    <div id="loading" class="loading">正在汇总课程月份数据…</div>
+    <div id="error" class="error" hidden></div>
+    <div id="dashboard" hidden>
+      <section class="intro">
+        <div><h2>课程月份概览</h2><p>一人一课一月的明细结构 · 月度节奏 · 缴费覆盖</p></div>
+        <div class="period">课程月份 · 最新批次 <strong id="current-batch">—</strong><br>
+          <span id="record-meta">—</span></div>
+      </section>
+      <div class="notice" id="data-notice"></div>
+
+      <div class="kpis" id="kpis"></div>
+      <div class="grid">
+
+        <section class="panel span-7">
+          <div class="panel-head"><div><h3 class="panel-title">课程 × 月份明细热力图</h3>
+            <div class="panel-sub">颜色深浅表示明细行数（人次口径）</div></div>
+            <span class="panel-kicker" id="course-batch">—</span></div>
+          <div class="stats-row" id="course-stats"></div>
+          <div class="heat-wrap" id="heatmap"></div>
+          <div class="heat-note">重要口径：明细行数表示课程月份<b>人次</b>记录；同一个人报了多门课或在多个月份参训，
+            会在表中出现多行，<b>请勿相加后当作去重人数</b>。</div>
+        </section>
+
+        <section class="panel span-5">
+          <div class="panel-head"><div><h3 class="panel-title">月度明细节奏</h3>
+            <div class="panel-sub">按月份统计明细行数与去重人数</div></div></div>
+          <div class="chart" id="month-chart"></div>
+          <div class="section-label">月度去重人数</div>
+          <div class="chart" id="month-learners-chart"></div>
+        </section>
+
+        <section class="panel span-12">
+          <div class="panel-head"><div><h3 class="panel-title">每月报名门数分布（人数）</h3>
+            <div class="panel-sub">按自然月统计：各月分别有多少人报了 1 门 / 2 门 / 3 门 / 4 门课</div></div>
+            <span class="panel-kicker" id="depth-kicker">—</span></div>
+          <div class="chart" id="depth-chart"></div>
+          <div class="stats-row" id="depth-stats"></div>
+          <div class="heat-note" id="depth-note"></div>
+        </section>
+
+        <section class="panel span-6">
+          <div class="panel-head"><div><h3 class="panel-title">课程明细量 Top 12</h3>
+            <div class="panel-sub">按明细行数排序（人次口径）</div></div></div>
+          <div class="chart" id="course-chart"></div>
+        </section>
+
+        <section class="panel span-6">
+          <div class="panel-head"><div><h3 class="panel-title">缴费覆盖</h3>
+            <div class="panel-sub">按明细行统计</div></div>
+            <span class="panel-kicker" id="payment-kicker">— 行</span></div>
+          <div class="chart" id="payment-chart"></div>
+          <div class="section-label">关键指标批次趋势</div>
+          <div class="chart" id="trend-chart"></div>
+        </section>
+
+        <section class="panel span-7">
+          <div class="panel-head"><div><h3 class="panel-title">数据质量异常</h3>
+            <div class="panel-sub">按当前批次规则计数</div></div>
+            <span class="panel-kicker" id="anomaly-total">— 项</span></div>
+          <div class="chart" id="anomaly-chart"></div>
+        </section>
+        <section class="panel span-5">
+          <div class="panel-head"><div><h3 class="panel-title">异常批次变化</h3>
+            <div class="panel-sub">当前数据集已落库批次</div></div></div>
+          <div class="chart" id="anomaly-trend"></div>
+        </section>
+      </div>
+    </div>
+    <footer>统计结果来自已入库批次；个人标识仅用于服务端去重，不向页面返回。</footer>
+  </main>
+
+  <script src="/assets/dashboard.js"></script>
+  <script>
+    const PROJECT_ID = "course";
+    const { $, esc, fmt, empty, bars, lineChart, pieLegend, areaChart, heatmap, kpiCard, anomalyChart, stackedBars } = BI;
+
+    function render(data) {
+      BI.applyTheme(data.project?.accent, data.project?.accent_soft);
+      $("loading").hidden = true; $("error").hidden = true; $("dashboard").hidden = false;
+      $("current-batch").textContent = data.batch || "暂无数据";
+      $("record-meta").textContent = data.detail_rows == null ? "尚未入库"
+        : `${fmt(data.detail_rows)} 行明细 · ${fmt(data.unique_learners || 0)} 人（去重）`;
+
+      const warnings = [];
+      if ((data.kpis || []).length < 5) warnings.push("课程月份的五项指标尚未全部入库。");
+      if (data.batch_count === 1) warnings.push("课程月份数据仅有 1 个批次，图表呈现当前结构，不代表历史趋势。");
+      if (warnings.length) {
+        $("data-notice").textContent = warnings.join(" ");
+        $("data-notice").classList.add("show");
+      }
+
+      const trends = data.trends || [];
+      $("kpis").innerHTML = (data.kpis || [])
+        .map((k, i) => kpiCard(k, trends.find(t => t.key === k.key), i)).join("")
+        || empty("尚无已入库的指标");
+
+      $("course-batch").textContent = data.batch ? `批次 ${data.batch}` : "无课程批次";
+      $("course-stats").innerHTML = [
+        ["汇总明细行", data.detail_rows || 0, "人次口径"],
+        ["去重学员数", data.unique_learners || 0, "按身份键去重"],
+        ["课程数", (data.courses || []).length, "本页展示 Top 12"],
+      ].map(([label, value, note]) => `<div class="stat">
+        <div class="stat-label">${esc(label)}</div>
+        <div class="stat-value">${fmt(value)}</div>
+        <div class="stat-note">${esc(note)}</div></div>`).join("");
+      $("heatmap").innerHTML = heatmap(data, {accent: data.project?.accent});
+
+      $("month-chart").innerHTML = areaChart(data.months,
+        {labelKey: "label", valueKey: "detail_rows", accent: data.project?.accent});
+      $("month-learners-chart").innerHTML = areaChart(data.months,
+        {labelKey: "label", valueKey: "unique_learners", accent: data.project?.accent});
+
+      // 每月报名门数分布（人数）
+      const depth = data.monthly_depth;
+      if (depth && depth.buckets?.length) {
+        const order = ["1门", "2门", "3门", "4门", "5门以上"];
+        $("depth-chart").innerHTML = stackedBars(
+          depth.buckets.map(b => ({label: b.label, groups: b.groups, total: b.total})),
+          {groupOrder: order, colors: ["#5578f6", "#21a99a", "#e4a044", "#9078d8", "#e56b70"]});
+        $("depth-kicker").textContent = `${fmt(depth.grand_total)} 人次/月组`;
+        $("depth-stats").innerHTML = order
+          .filter(k => (depth.group_totals?.[k] || 0) > 0)
+          .map((k, i) => `<div class="stat">
+            <div class="stat-label">${esc(k)}</div>
+            <div class="stat-value">${fmt(depth.group_totals[k])}</div>
+            <div class="stat-note">${fmt(depth.group_totals[k] / depth.grand_total * 100, 1)}%</div>
+          </div>`).join("");
+        $("depth-note").innerHTML = `口径：<b>${esc(depth.note || "")}</b>`;
+      } else {
+        $("depth-chart").innerHTML = empty("当前批次没有可解析的月份维度");
+        $("depth-kicker").textContent = "—";
+        $("depth-stats").innerHTML = "";
+        $("depth-note").textContent = "";
+      }
+
+      $("course-chart").innerHTML = bars((data.courses || []).map(c => ({label: c.label, count: c.detail_rows})),
+        {height: 21, limit: 12, colors: ["#e4a044", "#5578f6", "#21a99a", "#9078d8"]});
+
+      $("payment-kicker").textContent = `${fmt(data.detail_rows || 0)} 行`;
+      $("payment-chart").innerHTML = pieLegend(data.payment_status);
+
+      $("trend-chart").innerHTML = lineChart(trends.map((t, i) => ({
+        ...t, color: BI.PALETTE[i % BI.PALETTE.length]
+      })), {height: 235});
+
+      const anomalies = data.anomalies || {};
+      $("anomaly-total").textContent = `${fmt(anomalies.total || 0)} 项`;
+      $("anomaly-chart").innerHTML = anomalyChart(anomalies);
+      $("anomaly-trend").innerHTML = lineChart([{
+        label: "全部异常", unit: "项",
+        points: (anomalies.trend || []).map(x => ({batch: x.batch, value: x.total, is_demo: x.is_demo}))
+      }], {height: 235});
+    }
+
+    async function load() {
+      $("refresh").disabled = true; $("refresh").textContent = "加载中…";
+      try {
+        const response = await fetch(`/dashboard/${PROJECT_ID}/data`, {cache: "no-store"});
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        render(await response.json());
+      } catch (error) {
+        $("loading").hidden = true; $("error").hidden = false;
+        $("error").textContent = `加载失败：${error.message}`;
+      } finally {
+        $("refresh").disabled = false; $("refresh").textContent = "刷新数据";
+      }
+    }
+    $("refresh").addEventListener("click", load);
+    load();
+  </script>
+</body>
+</html>

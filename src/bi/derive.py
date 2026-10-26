@@ -23,8 +23,10 @@ import datetime as _dt
 from dataclasses import dataclass
 from typing import Any
 
+from .cleaning import clean_rows
 from .config import DatasetConfig
 from .excel_reader import Dataset
+from .expiry import parse_expiry
 from .values import fmt_date, month_key, to_date
 
 # 派生列名（固定契约，供指标 / 差分 / API 引用）
@@ -39,6 +41,14 @@ COL_PASSED = "已通过人数"
 COL_EXAM_MONTH = "考试月份"
 COL_PAID = "已付款人数"
 COL_DEFERRED_CERT = "延期换证人数"
+
+# 证书类目的派生列（过期日期是核心口径）
+COL_CERT_START_DATE = "开始日期"
+COL_CERT_EXPIRY_DATE = "过期日期"
+COL_CERT_EXPIRY_PRECISION = "过期日期精度"
+COL_CERT_VALIDITY_DAYS = "有效期天数"
+COL_CERT_EXPIRY_MONTH = "过期月份"
+COL_CERT_EXPIRY_SHAPE = "有效期形态"
 
 DERIVED_COLUMNS = [
     COL_ENROLL_DATE,
@@ -136,9 +146,59 @@ def require_identity(ds: Dataset, cfg: DatasetConfig) -> int:
     return dropped
 
 
+def derive_expiry(ds: Dataset, cfg: DatasetConfig) -> None:
+    """证书类目：从「证书有效期」派生过期日期等列（配置驱动）。
+
+    原始列写法很杂（单日期 / 区间 / 只有年月），解析规则见 `bi.expiry`。
+    解析不出就留空——**不允许拿别的东西顶替**，下游据此提示「未计入」。
+    """
+    rule = cfg.derive.expiry or {}
+    if not rule:
+        return
+    column = str(rule.get("column", "证书有效期"))
+    start_column = str(rule.get("start_column", "证书开始日期"))
+    outputs = [str(c) for c in (rule.get("outputs") or [])]
+    if not outputs or column not in ds.columns:
+        return
+
+    for r in ds.rows:
+        info = parse_expiry(r.get(column))
+        start = to_date(r.get(start_column))
+        values = {
+            COL_CERT_START_DATE: fmt_date(start) if start else None,
+            COL_CERT_EXPIRY_DATE: fmt_date(info.date) if info.date else None,
+            COL_CERT_EXPIRY_PRECISION: info.precision or None,
+            COL_CERT_VALIDITY_DAYS: (info.date - start).days if (info.date and start) else None,
+            COL_CERT_EXPIRY_MONTH: month_key(info.date) if info.date else None,
+            COL_CERT_EXPIRY_SHAPE: info.shape,
+        }
+        for col in outputs:
+            r[col] = values.get(col)
+
+    for c in outputs:
+        if c not in ds.columns:
+            ds.columns.append(c)
+
+
+def clean(ds: Dataset, cfg: DatasetConfig) -> None:
+    """字段清洗（配置驱动）。清洗命中情况写进 `ds.notes`，不静默改数。
+
+    清洗在口径过滤**之前**做：证件号带尾噪字符时（如 `310229199403034414‘`），
+    先去噪再判空，才不会把一条有效记录当成"缺证件号"剔掉。
+    """
+    if not cfg.cleaning:
+        return
+    reports = clean_rows(ds.rows, cfg.cleaning)
+    notes = [report.as_note() for report in reports if report.as_note()]
+    if notes:
+        ds.notes = [n for n in ds.notes if not n.startswith("清洗列")] + notes
+
+
 def derive(ds: Dataset, cfg: DatasetConfig) -> Dataset:
     """就地追加派生列。幂等：已含派生列则直接返回。"""
+    clean(ds, cfg)
     require_identity(ds, cfg)
+    derive_expiry(ds, cfg)
     code_col = (cfg.derive.class_code or {}).get("column", "开班编号")
     if code_col not in ds.columns:
         return ds

@@ -10,9 +10,19 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .config import DatasetConfig
-from .derive import COL_EXAM_MONTH, EXAM_STATUS_PASSED, PAYMENT_PAID, parse_class_code
+from .derive import (
+    COL_CERT_EXPIRY_DATE,
+    COL_CERT_EXPIRY_PRECISION,
+    COL_CERT_START_DATE,
+    COL_EXAM_MONTH,
+    EXAM_STATUS_PASSED,
+    PAYMENT_PAID,
+    parse_class_code,
+)
+from .diff_engine import make_record_key
 from .excel_reader import Dataset
-from .values import display_value, to_number
+from .expiry import PRECISION_DAY, parse_expiry
+from .values import display_value, to_date, to_number
 
 SEV_ORDER = {"high": 0, "medium": 1, "low": 2, "info": 3}
 
@@ -59,6 +69,53 @@ def _rule_duplicate_keys(snap_dict: dict[str, Any], cfg: DatasetConfig) -> list[
     ]
 
 
+def _expiry_anomalies(ds: Dataset, cfg: DatasetConfig, row: dict[str, Any], key: str) -> list[Anomaly]:
+    """证书类目：过期日期相关的异常（规则见 config/datasets/certificates.yaml）。
+
+    只在配置了 `derive.expiry` 的数据集上生效，其它数据集不受影响。
+    """
+    rule = cfg.derive.expiry or {}
+    if not rule:
+        return []
+
+    out: list[Anomaly] = []
+    column = str(rule.get("column", "证书有效期"))
+    raw_value = row.get(column)
+    info = parse_expiry(raw_value)
+
+    if not info.ok:
+        reason = info.error or "原始值为空"
+        out.append(Anomaly("expiry_unresolved", "high", key,
+                           f"过期日期无法解析（{reason}）：{display_value(raw_value)}",
+                           column, display_value(raw_value)))
+        return out
+
+    expiry = info.date
+    assert expiry is not None
+
+    precision = str(row.get(COL_CERT_EXPIRY_PRECISION) or "")
+    if precision != PRECISION_DAY:
+        out.append(Anomaly("expiry_month_precision", "low", key,
+                           f"过期日期只有年月精度，按月末取值：{expiry.isoformat()}",
+                           COL_CERT_EXPIRY_DATE, expiry.isoformat()))
+
+    start = to_date(row.get(COL_CERT_START_DATE))
+    if start and expiry < start:
+        out.append(Anomaly("expiry_before_start", "high", key,
+                           f"过期日期 {expiry.isoformat()} 早于开始日期 {start.isoformat()}",
+                           COL_CERT_EXPIRY_DATE, expiry.isoformat()))
+
+    source_col = str(rule.get("source_column", "") or "")
+    estimated = [str(v) for v in (rule.get("estimated_source_values") or [])]
+    if source_col and estimated:
+        src = str(row.get(source_col) or "").strip()
+        if src in estimated:
+            out.append(Anomaly("expiry_estimated_source", "info", key,
+                               f"过期日期来自「{src}」，非证面原文（续证前需回证面核对）",
+                               source_col, src))
+    return out
+
+
 def check_row_anomalies(ds: Dataset, cfg: DatasetConfig) -> list[Anomaly]:
     """行级（单期）异常检测。"""
     out: list[Anomaly] = []
@@ -66,11 +123,20 @@ def check_row_anomalies(ds: Dataset, cfg: DatasetConfig) -> list[Anomaly]:
     code_col = (cfg.derive.class_code or {}).get("column", "开班编号")
 
     for row in ds.rows:
-        key = f"{row.get(id_col, '')}|{row.get('姓名', '')}".strip("|")
+        key = make_record_key(row, cfg).key
         idv = str(row.get(id_col) or "").strip()
-        if idv and not _id_number_valid(idv):
-            out.append(Anomaly("invalid_id_number", "high", key,
-                               f"证件号码校验位不合法：{idv}", "证件号码", idv))
+        if idv:
+            # 位数不对 与 校验位错 要分开报：前者是漏位/多位，后者是录错校验位，
+            # 两种修法完全不同（前者不能猜补，后者不能改）。
+            if len(idv) != 18:
+                out.append(Anomaly("id_number_length_invalid", "high", key,
+                                   f"证件号码位数异常（{len(idv)} 位，应为 18 位）：{idv}",
+                                   id_col, idv))
+            elif not _id_number_valid(idv):
+                out.append(Anomaly("invalid_id_number", "high", key,
+                                   f"证件号码校验位不合法：{idv}", id_col, idv))
+
+        out.extend(_expiry_anomalies(ds, cfg, row, key))
 
         status = str(row.get("考试状态") or "").strip()
         exam_date = row.get("考试日期")
